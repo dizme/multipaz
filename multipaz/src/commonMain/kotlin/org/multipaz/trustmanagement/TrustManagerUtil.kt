@@ -133,7 +133,8 @@ internal object TrustManagerUtil {
             // just submits a certificate for the key that their reader will be using.
             //
             if (chain.size == 1) {
-                val trustPoint = skiToTrustPoint[chain[0].subjectKeyIdentifier!!.toHex()]
+                val skiHex = chain[0].subjectKeyIdentifier?.toHex()
+                val trustPoint = if (skiHex != null) skiToTrustPoint[skiHex] else null
                 if (trustPoint != null) {
                     return TrustResult(
                         isTrusted = true,

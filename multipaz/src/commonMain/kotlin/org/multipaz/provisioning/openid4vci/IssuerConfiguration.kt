@@ -4,8 +4,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpStatusCode
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -26,27 +24,14 @@ internal data class IssuerConfiguration(
     val authorizationServerUrls: List<String>,
     val credentialConfigurations: Map<String, CredentialConfiguration>
 ) {
-    companion object: JsonParsing("Issuer metadata") {
+    companion object : JsonParsing("Issuer metadata") {
         private const val TAG = "IssuerConfiguration"
-        private val cacheLock = Mutex()
-        private var cachedIssuerConfiguration: IssuerConfiguration? = null
-        private var cachedClientPreferences: OpenID4VCIClientPreferences? = null
 
         suspend fun get(
             url: String,
             httpClient: HttpClient,
             clientPreferences: OpenID4VCIClientPreferences
         ): IssuerConfiguration {
-            cacheLock.withLock {
-                if (cachedClientPreferences === clientPreferences) {
-                    val issuerConfiguration = cachedIssuerConfiguration
-                    if (issuerConfiguration?.url == url) {
-                        return issuerConfiguration
-                    }
-                }
-            }
-
-            // Fetch issuer metadata
             val issuerMetadataUrl = wellKnown(url, "openid-credential-issuer")
             val issuerMetadataRequest = httpClient.get(issuerMetadataUrl) {}
             if (issuerMetadataRequest.status != HttpStatusCode.OK) {
@@ -72,22 +57,22 @@ internal data class IssuerConfiguration(
 
             for ((id, config) in credentialMetadata.obj("credential_configurations_supported")) {
                 if (config !is JsonObject) {
-                    throw IllegalStateException("Invalid credential configuration: '$id'")
+                    Logger.e(TAG, "Skipping credential_configuration_id=\"$id\": not a JSON object")
+                    continue
                 }
                 val format = try {
                     extractFormat(config)
-                } catch (err: IllegalArgumentException) {
-                    // Unsupported format, ignore
-                    Logger.e(TAG, "Unsupported credential format", err)
+                } catch (err: Exception) {
+                    Logger.e(TAG, "Skipping credential_configuration_id=\"$id\" (format parse failed)", err)
                     continue
                 }
                 credentialConfigurations[id] = CredentialConfiguration(
                     scope = config.stringOrNull("scope")
                 )
                 val keyProofType = try {
-                    extractKeyProofType(config, url, clientPreferences)
+                    extractKeyProofType(id, config, url, clientPreferences)
                 } catch (err: IllegalArgumentException) {
-                    Logger.e(TAG, "Unsupported key proof type", err)
+                    Logger.e(TAG, "Skipping credential_configuration_id=\"$id\" (key proof type not supported)", err)
                     continue
                 }
                 credentials[id] = CredentialMetadata(
@@ -102,7 +87,6 @@ internal data class IssuerConfiguration(
                 )
             }
 
-
             val provisioningMetadata = ProvisioningMetadata(
                 display = extractDisplay(credentialMetadata, httpClient, clientPreferences),
                 credentials = credentials.toMap()
@@ -114,22 +98,26 @@ internal data class IssuerConfiguration(
                 provisioningMetadata = provisioningMetadata,
                 authorizationServerUrls = authorizationServerUrls,
                 credentialConfigurations = credentialConfigurations.toMap()
-            ).also {
-                cacheLock.withLock {
-                    cachedClientPreferences = clientPreferences
-                    cachedIssuerConfiguration = it
-                }
-            }
+            )
         }
 
         private fun extractFormat(config: JsonObject): CredentialFormat =
             when (val format = config.string("format")) {
-                "dc+sd-jwt" -> CredentialFormat.SdJwt(config.string("vct"))
-                "mso_mdoc" -> CredentialFormat.Mdoc(config.string("doctype"))
+                "dc+sd-jwt" -> {
+                    val vct = config.stringOrNull("vct")
+                        ?: throw IllegalArgumentException("dc+sd-jwt requires vct")
+                    CredentialFormat.SdJwt(vct)
+                }
+                "mso_mdoc" -> {
+                    val docType = config.stringOrNull("doctype")
+                        ?: throw IllegalArgumentException("mso_mdoc requires doctype")
+                    CredentialFormat.Mdoc(docType)
+                }
                 else -> throw IllegalArgumentException("Unsupported credential format: '$format'")
             }
 
         private fun extractKeyProofType(
+            credentialConfigurationId: String,
             config: JsonObject,
             issuerId: String,
             clientPreferences: OpenID4VCIClientPreferences
@@ -138,6 +126,7 @@ internal data class IssuerConfiguration(
                 ?: return KeyBindingType.Keyless
             val attestation = proofTypes.objOrNull("attestation")
             val jwt = proofTypes.objOrNull("jwt")
+            val cwt = proofTypes.objOrNull("cwt")
             val proof = attestation ?: jwt
             if (proof != null) {
                 val alg = preferredAlgorithm(
@@ -153,6 +142,22 @@ internal data class IssuerConfiguration(
                         aud = issuerId
                     )
                 }
+            }
+            if (cwt != null && jwt == null) {
+                Logger.w(
+                    TAG,
+                    "Issuer only advertises cwt proof for \"$credentialConfigurationId\"; " +
+                        "using OpenID JWT proof-of-possession as compatibility fallback"
+                )
+                val alg = preferredAlgorithm(
+                    available = cwt.arrayOrNull("proof_signing_alg_values_supported"),
+                    clientPreferences = clientPreferences
+                )
+                return KeyBindingType.OpenidProofOfPossession(
+                    algorithm = alg,
+                    clientId = clientPreferences.clientId,
+                    aud = issuerId
+                )
             }
             throw IllegalArgumentException("No supported proof types")
         }

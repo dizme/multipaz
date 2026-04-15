@@ -214,9 +214,17 @@ internal class OpenID4VCIProvisioningClient(
         Logger.i(TAG, "Got successful response for credential request")
 
         val response = Json.parseToJsonElement(responseText) as JsonObject
-        val serializedCredentials = response["credentials"]!!.jsonArray.map {
+        val credentialElements = response["credentials"]?.jsonArray
+            ?: listOfNotNull(
+                response["credential"]?.let { credential ->
+                    buildJsonObject {
+                        put("credential", credential)
+                    }
+                }
+            )
+        val serializedCredentials = credentialElements.map {
             if (it !is JsonObject) {
-                throw IllegalStateException("Credential must be represented as json string")
+                throw IllegalStateException("Credential must be represented as json object")
             }
             val text = it.string("credential")
             when (credentialMetadata.format) {

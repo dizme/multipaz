@@ -362,7 +362,9 @@ object OpenID4VP {
             request["client_id"]?.jsonPrimitive?.content
                 ?: throw IllegalArgumentException("client_id not set on a signed request")
         } else {
-            val syntheticOrigin = "web-origin:$origin"
+            val o = origin?.takeIf { it.isNotEmpty() }
+                ?: throw IllegalArgumentException("origin is required for unsigned OpenID4VP requests")
+            val syntheticOrigin = "web-origin:$o"
             if (request.containsKey("client_id")) {
                 Logger.w(
                     TAG, "Ignoring client_id value of ${request["client_id"]} for an unsigned request, " +

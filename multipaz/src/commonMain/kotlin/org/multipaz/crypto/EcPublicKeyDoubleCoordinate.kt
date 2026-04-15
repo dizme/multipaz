@@ -43,7 +43,7 @@ data class EcPublicKeyDoubleCoordinate(
     override suspend fun toJwk(
         additionalClaims: JsonObject?,
     ): JsonObject {
-        return buildJsonObject {
+        val jwk = buildJsonObject {
             // Keep in lexicographic order for toJwkThumbprint()
             put("crv", curve.jwkName)
             put("kty", "EC")
@@ -55,6 +55,7 @@ data class EcPublicKeyDoubleCoordinate(
                 }
             }
         }
+        return JwkRfc7517.ensureCompliant(jwk)
     }
 
     override suspend fun toJwkThumbprint(digestAlgorithm: Algorithm): ByteString {

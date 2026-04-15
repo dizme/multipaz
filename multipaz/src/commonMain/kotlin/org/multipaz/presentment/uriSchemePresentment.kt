@@ -18,6 +18,7 @@ import io.ktor.http.parseUrlEncodedParameters
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.multipaz.cbor.Bstr
@@ -131,33 +132,39 @@ suspend fun uriSchemePresentment(
         onDocumentsInFocus = onDocumentsInFocus
     )
     val response = responseObject.response
-
-    val responseCs = when (requestObject["response_mode"]!!.jsonPrimitive.content) {
-        "direct_post" -> {
-            // Return an unsecured JWT as per https://datatracker.ietf.org/doc/html/rfc7519#section-6
-            val protectedHeader = buildJsonObject { put("alg", "none") }
-            val headerb64 = Json.encodeToString(protectedHeader).encodeToByteArray().toBase64Url()
-            val bodyb64 = Json.encodeToString(response).encodeToByteArray().toBase64Url()
-            "$headerb64.$bodyb64."
-        }
-        "direct_post.jwt" -> {
-            response["response"]!!.jsonPrimitive.content
-        }
-        else -> throw IllegalArgumentException("Unexpected response_mode")
-    }
+    val responseMode = requestObject["response_mode"]!!.jsonPrimitive.content
 
     val postResponseResponse = httpClient.post(responseUri) {
         contentType(ContentType.Application.FormUrlEncoded)
         setBody(
             Parameters.build {
-                append("response", responseCs)
-                // TODO: remember state
+                when (responseMode) {
+                    "direct_post" -> {
+                        val vpTokenInner = responseObject.vpToken["vp_token"]!!.jsonObject
+                        append("vp_token", Json.encodeToString(JsonObject.serializer(), vpTokenInner))
+                        requestObject["state"]?.jsonPrimitive?.content?.let { append("state", it) }
+                    }
+                    "direct_post.jwt" -> {
+                        append("response", response["response"]!!.jsonPrimitive.content)
+                    }
+                    else -> throw IllegalArgumentException("Unexpected response_mode")
+                }
             }.formUrlEncode().encodeToByteArray()
         )
     }
-    check(postResponseResponse.status == HttpStatusCode.OK)
-    check(postResponseResponse.contentType()!! == ContentType.Application.Json)
-    val bodyText = (postResponseResponse.body() as ByteArray).decodeToString()
+    val bodyBytes = postResponseResponse.body() as ByteArray
+    val bodyText = bodyBytes.decodeToString()
+    if (postResponseResponse.status != HttpStatusCode.OK) {
+        throw IllegalStateException(
+            "Verifier response ${postResponseResponse.status} from $responseUri: $bodyText"
+        )
+    }
+    val ct = postResponseResponse.contentType()
+    if (ct == null || !ct.match(ContentType.Application.Json)) {
+        throw IllegalStateException(
+            "Unexpected Content-Type $ct from $responseUri: $bodyText"
+        )
+    }
     val postResponseBody = Json.decodeFromString<JsonObject>(bodyText)
     val redirectUri = postResponseBody["redirect_uri"]?.jsonPrimitive?.content
 
