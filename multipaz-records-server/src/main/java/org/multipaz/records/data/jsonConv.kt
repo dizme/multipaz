@@ -95,11 +95,7 @@ fun JsonElement.toDataItem(recordType: RecordType): DataItem {
                 if (itemType != null) {
                     put(itemKey, item.toDataItem(itemType))
                 } else {
-                    if (itemKey == "instance_title") {
-                        put("instance_title", item.jsonPrimitive.content)
-                    } else {
                         throw IllegalArgumentException("Unexpected item: '$itemKey'")
-                    }
                 }
             }
         }

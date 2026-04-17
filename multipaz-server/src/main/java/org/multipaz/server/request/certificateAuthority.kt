@@ -15,6 +15,9 @@ import org.multipaz.server.enrollment.getLocalRootCertificate
 
 /**
  * Serves root certificates created by this server and their revocation lists.
+ *
+ * @param createOnRequest when `true`, root certificates are generated on demand if they
+ *     don't already exist. When `false`, a 404 is returned for missing identities.
  */
 fun Routing.certificateAuthority(createOnRequest: Boolean = false) {
     get("/crl/{identity}") {

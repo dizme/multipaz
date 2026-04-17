@@ -7,6 +7,7 @@ import org.multipaz.crypto.EcCurve
 import org.multipaz.crypto.EcPrivateKey
 import org.multipaz.rpc.backend.BackendEnvironment
 import org.multipaz.rpc.backend.getTable
+import org.multipaz.server.presentment.PresentmentRecord
 import org.multipaz.storage.StorageTableSpec
 import org.multipaz.verifier.customization.VerifierPresentment
 import kotlin.random.Random
@@ -33,8 +34,7 @@ data class Session(
     val encryptionPrivateKey: EcPrivateKey,
     val dcqlQuery: String,
     val jsonTransactionData: List<String>?,
-    var responseProtocol: String? = null,
-    var response: ByteString? = null,
+    var presentmentRecord: PresentmentRecord?,
     var result: String? = null
 ) {
     companion object {
@@ -48,12 +48,14 @@ data class Session(
         suspend fun createSession(
             dcqlQuery: String,
             jsonTransactionData: List<String>?,
+            nonce: ByteString?
         ): Pair<String, Session> {
             val session = Session(
-                nonce = ByteString(Random.nextBytes(15)),
+                nonce = nonce ?: ByteString(Random.nextBytes(15)),
                 encryptionPrivateKey = Crypto.createEcPrivateKey(EcCurve.P256),
                 dcqlQuery = dcqlQuery,
                 jsonTransactionData = jsonTransactionData,
+                presentmentRecord = null
             )
             val id = BackendEnvironment.getTable(tableSpec).insert(
                 key = null,

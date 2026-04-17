@@ -6,6 +6,8 @@ import org.multipaz.cbor.Bstr
 import org.multipaz.cbor.DataItem
 import org.multipaz.cbor.buildCborMap
 import org.multipaz.cose.Cose
+import org.multipaz.cose.CoseLabel
+import org.multipaz.cose.toCoseLabel
 import org.multipaz.crypto.Algorithm
 import org.multipaz.crypto.AsymmetricKey
 import org.multipaz.crypto.Crypto
@@ -34,12 +36,18 @@ class RpcAuthIssuerSignature(
             timestamp = Clock.System.now(),
             payloadHash = ByteString(Crypto.digest(Algorithm.SHA256, payload.value))
         )
+        val unprotectedHeaders = if (signingKey is AsymmetricKey.X509Certified) {
+            // Don't include root certificate
+            mapOf<CoseLabel, DataItem>(Cose.COSE_LABEL_X5CHAIN.toCoseLabel to signingKey.certChain.toDataItem())
+        } else {
+            mapOf()
+        }
         val sign1 = Cose.coseSign1Sign(
             signingKey = signingKey,
             message = assertion.toCbor(),
             includeMessageInPayload = true,
             protectedHeaders = mapOf(),
-            unprotectedHeaders = mapOf()
+            unprotectedHeaders = unprotectedHeaders
         )
         return buildCborMap {
             put("payload", payload)

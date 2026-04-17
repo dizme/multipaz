@@ -33,7 +33,7 @@ suspend fun data(call: ApplicationCall) {
         )
         return
     }
-    if (authorization.substring(0, 7).lowercase() != "bearer ") {
+    if (authorization.take(7).lowercase() != "bearer ") {
         call.respondText(
             status = HttpStatusCode.Unauthorized,
             contentType = ContentType.Text.Plain,
@@ -62,12 +62,7 @@ suspend fun data(call: ApplicationCall) {
                     putCborMap(scope) {
                         val record = records[recordId]
                         if (record != null) {
-                            put(
-                                recordId,
-                                CborMap(record.asMap.filter { (key, _) ->
-                                    key.asTstr != "instance_title"
-                                }.toMutableMap())
-                            )
+                            put(recordId, record)
                         }
                     }
                 }

@@ -13,6 +13,7 @@ import org.multipaz.records.data.recordTypes
 import org.multipaz.records.data.toDataItem
 import org.multipaz.rpc.handler.InvalidRequestException
 import org.multipaz.server.common.getAdminPassword
+import org.multipaz.util.Logger
 import kotlin.collections.component1
 import kotlin.collections.component2
 
@@ -21,22 +22,7 @@ suspend fun identityLoad(call: ApplicationCall) {
     if (request["password"]?.jsonPrimitive?.content != getAdminPassword()) {
         throw InvalidRequestException("wrong password")
     }
-    val identities = request["identities"]!!.jsonArray
-    val coreAttributes = recordTypes["core"]!!.subAttributes
-    for (identity in identities) {
-        identity as JsonObject
-        val common = identity["core"]!!.jsonObject.asIterable().associate { (key, value) ->
-            Pair(key, value.toDataItem(coreAttributes[key]!!))
-        }
-        val records =
-            identity["records"]!!.jsonObject.asIterable().associate { (recordTypeId, recordMap) ->
-                val recordType = recordTypes[recordTypeId]!!
-                Pair(
-                    recordTypeId,
-                    recordMap.jsonObject.asIterable().associate { (recordId, record) ->
-                        Pair(recordId, record.toDataItem(recordType))
-                    })
-            }
-        Identity.create(IdentityData(common, records))
+    for (identity in request["identities"]!!.jsonArray) {
+        Identity.create(IdentityData.fromJson(identity.jsonObject))
     }
 }

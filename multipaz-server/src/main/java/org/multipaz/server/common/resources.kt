@@ -57,6 +57,7 @@ private suspend fun fetchResource(call: ApplicationCall, path: String) {
     }
 }
 
+/** Wrapper for cached static resource content, used as a cache key type by [serveResources]. */
 data class ResourceBytes(val bytes: ByteString)
 
 private class ResourceNotFoundException : Exception()

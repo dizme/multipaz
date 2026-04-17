@@ -4,6 +4,7 @@ import kotlinx.io.bytestring.ByteString
 import org.multipaz.cbor.Bstr
 import org.multipaz.cbor.DataItem
 import org.multipaz.cose.Cose
+import org.multipaz.cose.CoseNumberLabel
 import org.multipaz.cose.toCoseLabel
 import org.multipaz.crypto.Algorithm
 import org.multipaz.crypto.EcPublicKey
@@ -39,7 +40,16 @@ class RpcAuthInspectorSignature(
         val sign1 = authMessage["sign1"].asCoseSign1
         val assertion = Assertion.fromCbor(sign1.payload!!) as AssertionRpcAuth
         val algId = sign1.protectedHeaders[Cose.COSE_LABEL_ALG.toCoseLabel]!!.asNumber.toInt()
-        val publicKey = keyLookup(assertion.clientId)
+        val certChain = sign1.unprotectedHeaders[CoseNumberLabel(Cose.COSE_LABEL_X5CHAIN)]
+        val clientPublicKey = keyLookup(assertion.clientId)
+        val publicKey = if (certChain == null) {
+            clientPublicKey
+        } else {
+            val x5c = certChain.asX509CertChain
+            x5c.validate()
+            x5c.certificates.last().verify(clientPublicKey)
+            x5c.certificates.first().ecPublicKey
+        }
         try {
             Cose.coseSign1Check(
                 publicKey = publicKey,

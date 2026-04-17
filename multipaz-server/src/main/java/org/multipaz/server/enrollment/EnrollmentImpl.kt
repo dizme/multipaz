@@ -190,6 +190,15 @@ class EnrollmentImpl: Enrollment, RpcAuthInspector by serverAuth {
             supportExpiration = true
         )
 
+        /**
+         * Returns a [Deferred] that resolves to this server's certified key for the given
+         * [serverIdentity] type.
+         *
+         * Loads from configuration, database, or triggers enrollment as needed. Results
+         * are cached in memory and automatically refreshed before certificate expiration.
+         *
+         * @param serverIdentity the type of identity for which the key is requested
+         */
         suspend fun getServerIdentity(
             serverIdentity: ServerIdentity,
         ): Deferred<AsymmetricKey.X509Certified> {
