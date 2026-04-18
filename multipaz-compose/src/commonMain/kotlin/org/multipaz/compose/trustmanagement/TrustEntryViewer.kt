@@ -138,7 +138,10 @@ fun TrustEntryViewer(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.Start,
         ) {
-            FloatingItemList(title = null) {
+            FloatingItemList(
+                modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+                title = null
+            ) {
                 FloatingItemHeadingAndText(stringResource(Res.string.trust_entry_test_only_label),
                     if (entryInfo.entry.metadata.testOnly) {
                         stringResource(Res.string.trust_entry_yes)
@@ -180,7 +183,10 @@ private fun VicalDetails(
     onViewVicalEntry: (vicalCertNum: Int) -> Unit,
     onViewCertificateChain: (certificateChain: X509CertChain) -> Unit,
 ) {
-    FloatingItemList(title = stringResource(Res.string.trust_entry_vical_data_title)) {
+    FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+        title = stringResource(Res.string.trust_entry_vical_data_title)
+    ) {
         FloatingItemHeadingAndText(
             heading = stringResource(Res.string.trust_entry_vical_details_version),
             text = signedVical.vical.version
@@ -228,7 +234,10 @@ private fun VicalDetails(
         }
     }
 
-    FloatingItemList(title = stringResource(Res.string.trust_entry_certificates_title)) {
+    FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+        title = stringResource(Res.string.trust_entry_certificates_title)
+    ) {
         signedVical.vical.certificateInfos.forEachIndexed { n, certificateInfo ->
             FloatingItemText(
                 modifier = Modifier.clickable { onViewVicalEntry(n) },
@@ -247,7 +256,10 @@ private fun RicalDetails(
     onViewRicalEntry: (ricalCertNum: Int) -> Unit,
     onViewCertificateChain: (certificateChain: X509CertChain) -> Unit,
 ) {
-    FloatingItemList(title = stringResource(Res.string.trust_entry_rical_data_title)) {
+    FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+        title = stringResource(Res.string.trust_entry_rical_data_title)
+    ) {
         FloatingItemHeadingAndText(
             heading = stringResource(Res.string.trust_entry_rical_details_type),
             text = signedRical.rical.type
@@ -299,7 +311,10 @@ private fun RicalDetails(
         }
     }
 
-    FloatingItemList(title = stringResource(Res.string.trust_entry_certificates_title)) {
+    FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+        title = stringResource(Res.string.trust_entry_certificates_title)
+    ) {
         signedRical.rical.certificateInfos.forEachIndexed { n, certificateInfo ->
             FloatingItemText(
                 modifier = Modifier.clickable { onViewRicalEntry(n) },

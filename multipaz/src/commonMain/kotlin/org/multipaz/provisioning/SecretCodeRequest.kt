@@ -10,11 +10,11 @@ import org.multipaz.cbor.annotation.CborSerializable
 @CborSerializable
 data class SecretCodeRequest(
     /**
-     * Description for the requested secret text.
+     * Description for the requested secret text, if available.
      *
      * This is plain text (i.e. not HTML or Markdown)
      */
-    val description: String,
+    val description: String?,
     /**
      * True if required text must only contain ASCII decimal digit characters.
      */

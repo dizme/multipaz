@@ -26,12 +26,17 @@ fun NfcReadersScreen(
 ) {
     val scrollState = rememberScrollState()
     Column(
-        modifier = Modifier.padding(8.dp).verticalScroll(scrollState),
+        modifier = Modifier
+            .padding(10.dp)
+            .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
 
         val readers = externalNfcReaderStore.readers.collectAsState().value
-        FloatingItemList(title = "External NFC Readers") {
+        FloatingItemList(
+            modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+            title = "External NFC Readers"
+        ) {
             if (readers.isEmpty()) {
                 FloatingItemCenteredText(
                     text = "No external NFC readers configured",

@@ -3,6 +3,7 @@ package org.multipaz.compose.certificateviewer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -12,6 +13,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.multipaz.asn1.OID
@@ -80,6 +82,7 @@ private fun BasicInfo(data: CertificateViewData) {
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
         title = stringResource(Res.string.certificate_viewer_sub_basic_info),
     ) {
         FloatingItemHeadingAndText(
@@ -161,6 +164,7 @@ private fun Subject(data: CertificateViewData) {
     if (data.subject.isEmpty()) return
 
     FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
         title = stringResource(Res.string.certificate_viewer_sub_subject),
     ) {
         data.subject.forEach { (oid, value) ->
@@ -179,6 +183,7 @@ private fun Issuer(data: CertificateViewData) {
     if (data.issuer.isEmpty()) return
 
     FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
         title = stringResource(Res.string.certificate_viewer_sub_issuer),
     ) {
         data.issuer.forEach { (oid, value) ->
@@ -195,6 +200,7 @@ private fun Issuer(data: CertificateViewData) {
 @Composable
 private fun PublicKeyInfo(data: CertificateViewData) {
     FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
         title = stringResource(Res.string.certificate_viewer_sub_public_key_info),
     ) {
         FloatingItemHeadingAndText(
@@ -219,6 +225,7 @@ private fun Extensions(data: CertificateViewData) {
     if (data.extensions.isEmpty()) return
 
     FloatingItemList(
+        modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
         title = stringResource(Res.string.certificate_viewer_sub_extensions),
     ) {
         data.extensions.forEach { (isCritical, oid, value) ->

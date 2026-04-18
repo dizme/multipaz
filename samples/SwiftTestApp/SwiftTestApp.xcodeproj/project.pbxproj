@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		512C056C2F94045400EA25B7 /* FloatingItemHeadingAndDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C056B2F94044E00EA25B7 /* FloatingItemHeadingAndDate.swift */; };
+		512C056D2F94045400EA25B7 /* FloatingItemHeadingAndDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C056B2F94044E00EA25B7 /* FloatingItemHeadingAndDate.swift */; };
+		512C056F2F9409F900EA25B7 /* FloatingItemHeadingAndDateTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C056E2F9409F000EA25B7 /* FloatingItemHeadingAndDateTime.swift */; };
+		512C05702F9409F900EA25B7 /* FloatingItemHeadingAndDateTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C056E2F9409F000EA25B7 /* FloatingItemHeadingAndDateTime.swift */; };
+		512C05722F940ABC00EA25B7 /* FloatingItemHeadingAndContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C05712F940AB500EA25B7 /* FloatingItemHeadingAndContent.swift */; };
+		512C05732F940ABC00EA25B7 /* FloatingItemHeadingAndContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512C05712F940AB500EA25B7 /* FloatingItemHeadingAndContent.swift */; };
 		512DAED62F2A31B30061F72B /* IdentityDocumentProviderExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 512DAECF2F2A31B30061F72B /* IdentityDocumentProviderExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		51BD5C5E2F22604F0082DE19 /* AdditionalConfig.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 51BD5C5C2F22604F0082DE19 /* AdditionalConfig.xcconfig */; };
 		51BD5C5F2F22604F0082DE19 /* DeveloperConfig.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 51BD5C5D2F22604F0082DE19 /* DeveloperConfig.xcconfig */; };
@@ -90,6 +96,9 @@
 
 /* Begin PBXFileReference section */
 		51100E672F21D4A5006B2ADD /* SwiftTestApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftTestApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		512C056B2F94044E00EA25B7 /* FloatingItemHeadingAndDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingItemHeadingAndDate.swift; sourceTree = "<group>"; };
+		512C056E2F9409F000EA25B7 /* FloatingItemHeadingAndDateTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingItemHeadingAndDateTime.swift; sourceTree = "<group>"; };
+		512C05712F940AB500EA25B7 /* FloatingItemHeadingAndContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingItemHeadingAndContent.swift; sourceTree = "<group>"; };
 		512DAECF2F2A31B30061F72B /* IdentityDocumentProviderExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = IdentityDocumentProviderExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		51BD5C5C2F22604F0082DE19 /* AdditionalConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = AdditionalConfig.xcconfig; path = ../testapp/iosApp/AdditionalConfig.xcconfig; sourceTree = SOURCE_ROOT; };
 		51BD5C5D2F22604F0082DE19 /* DeveloperConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = DeveloperConfig.xcconfig; path = ../testapp/iosApp/DeveloperConfig.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -207,6 +216,9 @@
 		51F711882F860D320017F68B /* swift */ = {
 			isa = PBXGroup;
 			children = (
+				512C05712F940AB500EA25B7 /* FloatingItemHeadingAndContent.swift */,
+				512C056E2F9409F000EA25B7 /* FloatingItemHeadingAndDateTime.swift */,
+				512C056B2F94044E00EA25B7 /* FloatingItemHeadingAndDate.swift */,
 				51F7116E2F860D320017F68B /* Consent.swift */,
 				51F7116F2F860D320017F68B /* ConsentPromptDialog.swift */,
 				51F711702F860D320017F68B /* DocumentCarousel.swift */,
@@ -396,6 +408,7 @@
 			files = (
 				51F711A32F860D320017F68B /* DocumentModel.swift in Sources */,
 				51F711A42F860D320017F68B /* DocumentExtCardart.swift in Sources */,
+				512C056F2F9409F900EA25B7 /* FloatingItemHeadingAndDateTime.swift in Sources */,
 				51F711A52F860D320017F68B /* DocumentExt.swift in Sources */,
 				51F711A62F860D320017F68B /* FloatingItemHeadingAndText.swift in Sources */,
 				51F711A72F860D320017F68B /* VerticalDocumentList.swift in Sources */,
@@ -419,6 +432,8 @@
 				51F711B92F860D320017F68B /* MdocProximityQrSettings.swift in Sources */,
 				51F711BA2F860D320017F68B /* ConsentPromptDialog.swift in Sources */,
 				51F711BB2F860D320017F68B /* RequestAuthorizationView.swift in Sources */,
+				512C05732F940ABC00EA25B7 /* FloatingItemHeadingAndContent.swift in Sources */,
+				512C056C2F94045400EA25B7 /* FloatingItemHeadingAndDate.swift in Sources */,
 				51F711BC2F860D320017F68B /* SmartSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -433,11 +448,13 @@
 				51F7118C2F860D320017F68B /* FloatingItemHeadingAndText.swift in Sources */,
 				51F7118D2F860D320017F68B /* VerticalDocumentList.swift in Sources */,
 				51F7118E2F860D320017F68B /* Extensions.swift in Sources */,
+				512C056D2F94045400EA25B7 /* FloatingItemHeadingAndDate.swift in Sources */,
 				51F7118F2F860D320017F68B /* ProvisioningView.swift in Sources */,
 				51F711902F860D320017F68B /* PromptModelExt.swift in Sources */,
 				51F711912F860D320017F68B /* PromptDialogs.swift in Sources */,
 				51F711922F860D320017F68B /* PassphrasePromptDialog.swift in Sources */,
 				51F711932F860D320017F68B /* SimplePresentmentSourceExt.swift in Sources */,
+				512C05702F9409F900EA25B7 /* FloatingItemHeadingAndDateTime.swift in Sources */,
 				51F711942F860D320017F68B /* FloatingItemCenteredText.swift in Sources */,
 				51F711952F860D320017F68B /* TagsExt.swift in Sources */,
 				51F711962F860D320017F68B /* MdocProximityQrPresentment.swift in Sources */,
@@ -451,6 +468,7 @@
 				51F7119E2F860D320017F68B /* PassphraseInputView.swift in Sources */,
 				51F7119F2F860D320017F68B /* MdocProximityQrSettings.swift in Sources */,
 				51F711A02F860D320017F68B /* ConsentPromptDialog.swift in Sources */,
+				512C05722F940ABC00EA25B7 /* FloatingItemHeadingAndContent.swift in Sources */,
 				51F711A12F860D320017F68B /* RequestAuthorizationView.swift in Sources */,
 				51F711A22F860D320017F68B /* SmartSheet.swift in Sources */,
 			);

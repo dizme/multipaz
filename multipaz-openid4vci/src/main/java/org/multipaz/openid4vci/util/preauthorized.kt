@@ -47,7 +47,7 @@ fun parseTxKind(txKind: String?, txPrompt: String?): SecretCodeRequest? {
     val txNumeric = txKind.startsWith("n")
     val txLength = txKind.substring(1).toInt()
     return SecretCodeRequest(
-        description = txPrompt ?: "Transaction Code",
+        description = txPrompt,
         isNumeric = txNumeric,
         length = txLength
     )

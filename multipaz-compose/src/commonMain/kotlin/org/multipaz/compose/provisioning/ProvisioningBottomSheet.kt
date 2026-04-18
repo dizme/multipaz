@@ -65,6 +65,8 @@ import org.multipaz.multipaz_compose.generated.resources.provisioning_requestion
 import org.multipaz.multipaz_compose.generated.resources.provisioning_retry
 import org.multipaz.multipaz_compose.generated.resources.provisioning_select_credential
 import org.multipaz.multipaz_compose.generated.resources.provisioning_title
+import org.multipaz.multipaz_compose.generated.resources.provisioning_tx_code_fallback_prompt
+import org.multipaz.multipaz_compose.generated.resources.provisioning_tx_code_fallback_prompt_numeric
 import org.multipaz.provisioning.AuthorizationChallenge
 import org.multipaz.provisioning.AuthorizationException
 import org.multipaz.provisioning.AuthorizationResponse
@@ -536,12 +538,17 @@ private fun EvidenceRequestSecretText(
         maxLength = passphraseRequest.length ?: 10,
         passphraseRequest.isNumeric
     )
+    val fallback = if (passphraseRequest.isNumeric) {
+        stringResource(Res.string.provisioning_tx_code_fallback_prompt_numeric)
+    } else {
+        stringResource(Res.string.provisioning_tx_code_fallback_prompt)
+    }
     Column {
         Text(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
                 .padding(16.dp, 8.dp),
-            text = passphraseRequest.description
+            text = passphraseRequest.description ?: fallback
         )
         if (challenge.retry) {
             Text(

@@ -157,7 +157,7 @@ fun TrustEntryScreen(
                 .verticalScroll(scrollState)
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(8.dp),
+                .padding(10.dp),
         ) {
             TrustEntryViewer(
                 trustManagerModel = trustManagerModel,

@@ -111,6 +111,8 @@
     <string name="provisioning_error">Error provisioning (error code: %1$s)</string>
     <string name="provisioning_select_credential">Select credential to provision:</string>
     <string name="provisioning_cancel_button">Cancel provisioning</string>
+    <string name="provisioning_tx_code_fallback_prompt_numeric">Enter the PIN that was previously communicated to you</string>
+    <string name="provisioning_tx_code_fallback_prompt">Enter the passphrase that was previously communicated to you</string>
 
     <!-- durationFromNowText -->
     <string name="duration_just_now">just now</string>
@@ -204,4 +206,10 @@
     <string name="key_unlock_present_bio_subtitle">Authentication is required</string>
     <string name="key_unlock_present_passphrase_subtitle">Enter the passphrase associated with the document</string>
     <string name="aks_unlock_present_pin_subtitle">Enter the PIN associated with the document</string>
+
+    <!-- FloatingItemHeadingAndDate -->
+    <string name="floating_item_heading_and_date_not_set">Not set</string>
+
+    <!-- FloatingItemHeadingAndDateTime -->
+    <string name="floating_item_heading_and_date_time_not_set">Not set</string>
 </resources>

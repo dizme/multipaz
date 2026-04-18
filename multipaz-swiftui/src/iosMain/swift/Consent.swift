@@ -395,6 +395,7 @@ private struct ShowRequesterInfo: View {
                     TabView(selection: $currentPage) {
                         ForEach(0..<certificates.count, id: \.self) { index in
                             X509CertViewer(certificate: certificates[index])
+                                .padding()
                                 .tag(index)
                                 .measurePageHeight(index)
                         }

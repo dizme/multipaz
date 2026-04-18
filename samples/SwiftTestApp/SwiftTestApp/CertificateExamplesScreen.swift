@@ -68,10 +68,10 @@ struct CertificateExamplesScreen: View {
                     Text("Certificate valid in the future w/ unknown X500 component")
                 }
             }
+            .padding(10)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .navigationTitle("Certificate examples")
-        .padding()
     }
 }
 

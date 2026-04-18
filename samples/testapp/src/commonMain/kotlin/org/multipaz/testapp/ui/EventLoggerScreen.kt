@@ -138,9 +138,12 @@ fun EventLoggerScreen(
             .verticalScroll(scrollState)
             .fillMaxSize()
             .padding(innerPadding)
-            .padding(8.dp)
+            .padding(10.dp)
         ) {
-            FloatingItemList(title = "Events") {
+            FloatingItemList(
+                modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+                title = "Events"
+            ) {
                 when (val currentEvents = events) {
                     null -> {
                         CircularProgressIndicator()

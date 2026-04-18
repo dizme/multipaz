@@ -202,10 +202,13 @@ fun EventViewerScreen(
     ) { innerPadding ->
 
         val scrollState = rememberScrollState()
-        Column(modifier = Modifier.fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(innerPadding)
-            .padding(8.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(innerPadding)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             when (val currentEvents = events) {
                 null -> {
@@ -260,8 +263,8 @@ private fun EventViewer(
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val imageSize = 80.dp
         presentmentData.trustMetadata?.displayIcon?.let {
@@ -288,7 +291,9 @@ private fun EventViewer(
             fontWeight = FontWeight.Bold,
         )
 
-        FloatingItemList(title = null) {
+        FloatingItemList(
+            modifier = Modifier.padding(top = 10.dp, bottom = 20.dp)
+        ) {
             FloatingItemHeadingAndText(
                 heading = "Date and time",
                 text = eventDateTimeString
@@ -391,7 +396,10 @@ private fun EventViewer(
                 if (requestedClaim is MdocRequestedClaim) !requestedClaim.intentToRetain else true
             }
             if (sharedClaims.isNotEmpty()) {
-                FloatingItemList(title = "This info was shared") {
+                FloatingItemList(
+                    modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+                    title = "This info was shared",
+                ) {
                     ExtractClaimsItems(sharedClaims, documentTypeRepository)
                 }
             }
@@ -400,7 +408,10 @@ private fun EventViewer(
                 if (requestedClaim is MdocRequestedClaim) requestedClaim.intentToRetain else false
             }
             if (sharedAndStoredClaims.isNotEmpty()) {
-                FloatingItemList(title = "This info was shared and stored") {
+                FloatingItemList(
+                    modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+                    title = "This info was shared and stored",
+                ) {
                     ExtractClaimsItems(sharedAndStoredClaims, documentTypeRepository)
                 }
             }
