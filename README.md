@@ -1,137 +1,187 @@
-# Multipaz
+# OpenID4VCI / OpenID4VP interoperability patches
 
-This repository contains libraries and applications for working with real-world
-identity. The initial focus for this work was mdoc/mDL according to [ISO/IEC 18013-5:2021](https://www.iso.org/standard/69084.html)
-and related standards but the current scope also include other credential formats and
-presentment protocols.
+This repository is a fork of [openwallet-foundation/multipaz](https://github.com/openwallet-foundation/multipaz). The **upstream project README** is preserved as [`README.upstream.md`](README.upstream.md).
 
-## Multipaz Libraries
+The sections below describe **only the changes in this fork** aimed at interoperating with a **walt.id**-style issuer and **Verifier2** (OpenID4VCI / OpenID4VP). They do not replace Multipaz or protocol specifications.
 
-The project provides libraries written in [Kotlin Multiplatform](https://kotlinlang.org/docs/multiplatform.html):
+---
 
-- `multipaz` provides the core building blocks. It works on Android,
-  iOS, and in server-side environments. The library includes support 
-  for ISO mdoc and IETF SD-JWT VC credential formats and also implements
-  proximity presentment using ISO/IEC 18013-5:2021 (for ISO mdoc credentials)
-  and presentment to applications using the W3C Digital Credentials API
-  according to ISO/IEC 18013-7:2025 and OpenID4VP 1.0.
-- `multipaz-compose` provides rich UI elements to be used in Compose
-  applications.
-- `multipaz-utopia` contains document and transaction data types specific
-  to the Multipaz Utopia universe.
-- `multipaz-doctypes` contains standardized document and transaction data
-  types (including ISO/IEC 18013-5:2021 mDL and EU PID) along with human-readable
-  descriptions of claims / data elements, sample data, and sample requests.
-- `multipaz-longfellow` bundles the [Google Longfellow-ZK](https://github.com/google/longfellow-zk) library
-  and integrates with the core `multipaz` for Zero-Knowledge Proofs
-  according to latest available [ISO/IEC 18013-5 Second Edition draft](https://github.com/ISOWG10/ISO-18013).
-- `multipaz-swiftui` contains SwiftUI components which can be used in
-  Swift applications.
+## RFC 7517 JWK handling (`JwkRfc7517`, `EcPublicKey`)
 
-## Command-line tool
+**Issue:** OpenID4VCI proofs (and other JWTs carrying a `jwk` header, e.g. DPoP) must embed a **RFC 7517–compliant** JWK (`kty` required; `key_ops` as a string array when present). Fixing this only on the issuer with a permissive import is the wrong layer for client-side compliance.
 
-A command-line tool `multipazctl` is also included which can be used to generate
-ISO/IEC 18013-5:2021 IACA certificates among other things. Use
-`./gradlew --quiet runMultipazCtl --args "help"` for documentation on supported
-verbs and options. To set up a wrapper, first build the fat jar
+**Change:**
 
-```shell
-$ ./gradlew multipazctl:buildFatJar
+- `multipaz/src/commonMain/kotlin/org/multipaz/crypto/JwkRfc7517.kt` — `ensureCompliant`: infers `kty` when missing (`y` → `EC`, `x` without `y` → `OKP`); normalizes `key_ops` from a single string to a `JsonArray`.
+- `EcPublicKeyDoubleCoordinate.toJwk` / `EcPublicKeyOkp.toJwk`: after building the object, return `JwkRfc7517.ensureCompliant(jwk)`.
+
+Excerpt:
+
+```kotlin
+object JwkRfc7517 {
+    fun ensureCompliant(jwk: JsonObject): JsonObject {
+        val normalized = jwk.toMutableMap()
+        if ("kty" !in normalized) {
+            val kty = when {
+                "y" in normalized -> "EC"
+                "x" in normalized -> "OKP"
+                else -> return jwk
+            }
+            normalized["kty"] = JsonPrimitive(kty)
+        }
+        normalized["key_ops"]?.let { ko ->
+            if (ko is JsonPrimitive && ko.isString) {
+                normalized["key_ops"] = buildJsonArray { add(ko) }
+            }
+        }
+        return JsonObject(normalized)
+    }
+}
 ```
 
-then create a wrapper like this
-```shell
-#!/bin/sh
-MAIN_CLASS="org.multipaz.multipazctl.MultipazCtl"
-CLASSPATH="/Users/davidz/StudioProjects/identity-credential/multipazctl/build/libs/multipazctl-all.jar"
-JVM_OPTS="-Xms256m -Xmx512m"
-exec java $JVM_OPTS -cp "$CLASSPATH" "$MAIN_CLASS" "$@"
+---
+
+## OpenID4VCI
+
+### Issuer metadata cache removed
+
+**Issue:** Stale issuer metadata across retries or after server-side changes.
+
+**Upstream:** `IssuerConfiguration.get` could reuse a cached `IssuerConfiguration` when URL and preferences matched.
+
+**Fork:** Cache removed — every `get` calls `fetchMetadata` again.
+
+**File:** `multipaz/src/commonMain/kotlin/org/multipaz/provisioning/openid4vci/IssuerConfiguration.kt`
+
+```kotlin
+suspend fun get(
+    url: String,
+    httpClient: HttpClient,
+    clientPreferences: OpenID4VCIClientPreferences
+): IssuerConfiguration {
+    val credentialMetadata = fetchMetadata(
+        url = url,
+        httpClient = httpClient,
+        wellKnownName = "openid-credential-issuer"
+    )
+    // ...
+}
 ```
 
-in e.g. `~/bin/multipazctl` adjusting paths as needed. With this you can now
-invoke `multipazctl` like any other system tool.
+### Per-entry issuer metadata parsing (safe skip)
 
-## Library releases, Versioning, and Stability
+**Behavior:** For each entry in `credential_configurations_supported`: run `extractFormat` (needs `vct` for `dc+sd-jwt`, `doctype` for `mso_mdoc`), then `extractKeyProofType`. If a step fails, **only that entry** is skipped with a log (including `credential_configuration_id`); other entries remain.
 
-Libraries are released on [Maven Central](https://mvnrepository.com/artifact/org.multipaz/multipaz)
-usually every 4-8 weeks. Releases up until and including 0.97.0 can be found on [GMaven](https://maven.google.com/).
-[Semantic Versioning](https://en.wikipedia.org/wiki/Software_versioning#Semantic_versioning)
-is used. At this time we're in pre-1.0 territory but we expect to hit 1.0 around
-late 2026 or early 2027.
+**Upstream:** One bad entry could fail the entire issuer load.
 
-We are also making Multipaz available as a [Swift package](https://github.com/openwallet-foundation/multipaz/blob/main/Package.swift)
-which includes the `multipaz`, `multipaz-doctypes`,
-`multipaz-longfellow`, and `multipaz-swiftui` libraries. This is built using
-[SKIE](https://skie.touchlab.co/). Be careful relying on this as Swift/Kotlin interop technology
-might change in the near future with e.g. [Swift Export](https://kotlinlang.org/docs/native-swift-export.html).
+**Fork:**
 
-At this point both API interfaces and data stored on disk are subject to change
-but we expect to provide stability guarantees post 1.0. We only expect minor changes
-for example conversion from `ByteArray` to `ByteString` and similar things.
+- `catch (Exception)` around `extractFormat` (not only `IllegalArgumentException`).
+- `vct` / `doctype` via `stringOrNull`; if missing → exception and skip (no invented defaults).
 
-## Getting involved
+| Behavior | Effect |
+| -------- | ------ |
+| `catch (Exception)` on `extractFormat` | A broken entry does not block the rest |
+| `vct` / `doctype` required for a valid entry | Incomplete entries are dropped, not “anonymous” credentials |
+| Only `cwt` in `proof_types_supported` | Warning and `OpenidProofOfPossession` fallback (see below) |
 
-We have resources for people already involved and people wishing to contribute
-to the Multipaz project
-- [CONTRIBUTING.md](CONTRIBUTING.md) for how to get involved with the project and send PRs.
-- [CODE-OF-CONDUCT.md](CODE-OF-CONDUCT.md) for the policies and rules around collaboration.
-- [CODING-STYLE.md](CODING-STYLE.md) for guidelines on writing code to be included in the project.
-- [TESTING.md](TESTING.md) explains our approach to unit and manual testing.
-- [DEVELOPER-ENVIRONMENT.md](DEVELOPER-ENVIRONMENT.md) for how to set up your system for building Multipaz.
-- [Lokalize Plugin](build-logic/lokalize/README.md) for managing translations in `multipaz-compose` and  `multipaz-doctypes` (AI-assisted translation and validation).
+Excerpt:
 
-Note: If you're just looking to use the Multipaz libraries you do not need to build
-the entire Multipaz project from source. Instead, just use our released libraries,
-see the next section for an example of this.
+```kotlin
+for ((id, config) in credentialMetadata.obj("credential_configurations_supported")) {
+    val format = try {
+        extractFormat(config)
+    } catch (err: Exception) {
+        Logger.e(TAG, "Skipping credential_configuration_id=\"$id\" (format parse failed)", err)
+        continue
+    }
+    val keyProofType = try {
+        extractKeyProofType(id, config, url, clientPreferences)
+    } catch (err: IllegalArgumentException) {
+        Logger.e(TAG, "Skipping credential_configuration_id=\"$id\" (key proof type not supported)", err)
+        continue
+    }
+    // ... credentials[id] = CredentialMetadata(...)
+}
+```
 
-## Examples / Samples
+### `cwt`-only proof metadata fallback
 
-For a fully-fledged mDL wallet, our current answer is to use the `samples/testapp`
-module which works on both Android and iOS. This application is intended for
-developers and as such has a lot of options and settings. It's intended to
-exercise all code in the libraries. Prebuilt APKs are available from
-https://apps.multipaz.org.
+**Context:** OID4VCI allows `proof_types_supported` entries such as **`jwt`** and **`cwt`** for `mso_mdoc`; an issuer advertising **only `cwt`** is still spec-valid. The **gap** is between metadata (CWT proof) and the **local sample** using **JWT** proofs (`OpenidProofOfPossession`) without a CWT pipeline. This fallback is **client tolerance** to proceed; it does not implement native CWT proofs. Sending JWT when only `cwt` is advertised is **not** strictly aligned with metadata unless the issuer accepts JWT anyway (real-world stack behavior).
 
-For a SwiftUI version of `samples/testapp` see `samples/SwiftTestApp` which works
-on iOS and is a testbed for the Swift bindings as well as the SwiftUI components
-in `multipaz-swiftui`.
+**Issue:** walt.id may declare `proof_types_supported.cwt` for `mso_mdoc` while the sample uses JWT proofs; without tolerance the configuration was unusable.
 
-For a fully-featured proximity reader app using Multipaz, see
-[MpzIdentityReader](https://github.com/openwallet-foundation/multipaz-identity-reader/).
-Prebuilt APKs are available from https://apps.multipaz.org.
+**Change:** In `IssuerConfiguration.kt`, if only `cwt` is present and not `jwt`, log a warning and still use `OpenidProofOfPossession` (same algorithm / client id as the operational JWT flow).
 
-For an over-the-Internet verifier supporting OpenID4VP (both W3C DC API and
-URI schemes) and ISO/IEC 18013-7 Annex A and C see https://verifier.multipaz.org.
+```kotlin
+val jwt = proofTypes.objOrNull("jwt")
+val cwt = proofTypes.objOrNull("cwt")
+if (cwt != null && jwt == null) {
+    Logger.w(
+        TAG,
+        "Issuer only advertises cwt proof; using OpenID JWT proof-of-possession as compatibility fallback"
+    )
+}
+KeyBindingType.OpenidProofOfPossession(
+    algorithm = alg,
+    clientId = clientPreferences.clientId,
+    aud = issuerId
+)
+```
 
-To see how to use Multipaz in a 3rd party project, see
-https://github.com/openwallet-foundation/multipaz-samples/ which includes
-a number of samples for different platforms.
+### Credential response: `credential` vs `credentials[]`
 
-## Developer Resources
+**Issue:** walt.id may return a single **`credential`** field; the client assumed only `credentials[]`.
 
-[developer.multipaz.org](https://developer.multipaz.org) is a comprehensive resource for developers. **The entire developer website is open source** and contributions are welcome!
+**Change:** `multipaz/src/commonMain/kotlin/org/multipaz/provisioning/openid4vci/OpenID4VCIProvisioningClient.kt`
 
-### Documentation
+```kotlin
+val credentialElements = response["credentials"]?.jsonArray ?: listOfNotNull(
+    response["credential"]?.let { credential ->
+        buildJsonObject {
+            put("credential", credential)
+        }
+    }
+)
+```
 
-- [Getting Started](https://developer.multipaz.org/docs/getting-started): Provides foundational knowledge for new users.
-- [API Reference](https://developer.multipaz.org/kdocs/index.html): Comprehensive documentation for every API endpoint, providing thorough understanding of the available functionalities.
-- [Codelabs](https://developer.multipaz.org/codelabs): Guided tutorials on key identity credential concepts, along with sample apps that provide tangible examples to accelerate development.
-- [Showcase Apps](https://developer.multipaz.org/showcase): Real-world applications built leveraging the Multipaz framework.
+---
 
-### Applications
+## OpenID4VP
 
-- [Android Apps](https://apps.multipaz.org/)
-- [Web Verifier App](https://verifier.multipaz.org/)
-- [Issuer Portal](https://issuer.multipaz.org/)
-- [Identity Reader Backend](http://identityreader.multipaz.org/)
+### `direct_post` (plain) submit
 
-### Community & Contribution
+**Issue:** The verifier expects `vp_token` and `state` in the POST body. The sample was sending `response` in a way that pushed the verifier toward the **encrypted** path instead of plain `direct_post`.
 
-- [Contributing Guide](https://developer.multipaz.org/contributing/contributing)
-- [Website Contribution Guide](https://github.com/openwallet-foundation/multipaz-developer-website)
-- [Blog](https://developer.multipaz.org/blog)
-- [Discord](https://discord.com/invite/openwalletfoundation)
+**Change:** `multipaz/src/commonMain/kotlin/org/multipaz/presentment/uriSchemePresentment.kt` — for `direct_post`, send `vp_token` (from the internal map, not a double wrapper) and `state`; use `response` only for `direct_post.jwt`.
 
-## Note
+```kotlin
+Parameters.build {
+    when (responseMode) {
+        "direct_post" -> {
+            append("vp_token", Json.encodeToString(responseObject.vpToken["vp_token"]!!.jsonObject))
+            requestObject["state"]?.jsonPrimitive?.content?.let { append("state", it) }
+        }
+        "direct_post.jwt" -> {
+            append("response", response["response"]!!.jsonPrimitive.content)
+        }
+        else -> throw IllegalArgumentException("Unexpected response_mode")
+    }
+}
+```
 
-This is not an official or supported Google product.
+### Verification response `Content-Type` and error bodies (wallet)
+
+**Issue:** Strict string equality on `Content-Type` failed for `application/json; charset=utf-8`, etc.
+
+**Change:** `uriSchemePresentment.kt` — use `ContentType.Application.Json` matching on the POST response to `response_uri`. If the verifier returns a non-2xx status (e.g. **500** when VP/DCQL validation fails on walt.id), the thrown exception now includes **status, URI, and response body** so logs are not only a generic “Check failed”.
+
+### X.509 trust (`x509_san_dns`, single-certificate chain)
+
+With a signed request and an X.509 chain reduced to a **single** certificate, `TrustManagerUtil.verifyX509TrustChain` may try to match a trust anchor via **Subject Key Identifier** (SKI). If the certificate has **no SKI** extension, the old code used `!!` and threw **NPE**; the lookup is now optional (`subjectKeyIdentifier?.toHex()`), and without a configured anchor the result is **untrusted** instead of a crash.
+
+---
+
+## Summary
+
+These changes tighten **JWK** output, make **issuer metadata** loading more resilient and cache-free, accept **walt.id** credential response shapes, adjust **OpenID4VP presentment** for plain `direct_post`, improve **error visibility** from the verifier, and fix **X.509 trust** handling when SKI is absent—see [`README.upstream.md`](README.upstream.md) for the full upstream Multipaz overview.
