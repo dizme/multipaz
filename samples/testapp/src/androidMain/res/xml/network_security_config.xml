@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- NOTE: Needed since a developer may run a Cloud Secure Area locally. -->
-    <base-config cleartextTrafficPermitted="true"/>
+    <!--
+      cleartext: useful for HTTP LAN endpoints (issuer/verifier over plain HTTP).
+      trust-anchors user + system: HTTPS to local issuer with mkcert (install rootCA.pem
+      as user CA on device); without <certificates src="user"/> Android ignores user CAs
+      for this app → SSLHandshakeException Trust anchor for certification path not found.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>
