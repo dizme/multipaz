@@ -275,9 +275,10 @@ fun TrustManagerScreen(
             modifier = Modifier
                 .verticalScroll(scrollState)
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(10.dp),
         ) {
             TrustEntryList(
+                modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
                 trustManagerModel = builtIn,
                 title = "Built-in",
                 imageLoader = imageLoader,
@@ -288,6 +289,7 @@ fun TrustManagerScreen(
                 }
             )
             TrustEntryList(
+                modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
                 trustManagerModel = user,
                 title = "Manually imported",
                 imageLoader = imageLoader,

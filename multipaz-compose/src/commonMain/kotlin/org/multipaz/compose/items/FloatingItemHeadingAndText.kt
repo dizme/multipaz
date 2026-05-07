@@ -31,32 +31,17 @@ fun FloatingItemHeadingAndText(
     image: @Composable () -> Unit = {},
     trailingContent: @Composable () -> Unit = {},
 ) {
-    FloatingItemContainer(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp, alignment = Alignment.Start),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            image()
-            Column(
-                modifier = Modifier.weight(1.0f)
-            ) {
-                Text(
-                    text = heading,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                SelectionContainer {
-                    Text(
-                        text = text,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
+    FloatingItemHeadingAndContent(
+        heading = heading,
+        content = {
+            SelectionContainer {
+                Text(text = text)
             }
-            trailingContent()
-        }
-    }
+        },
+        modifier = modifier,
+        image = image,
+        trailingContent = trailingContent
+    )
 }
 
 /**

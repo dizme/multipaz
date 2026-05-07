@@ -46,11 +46,16 @@ fun NfcReaderScreen(
     val state = reader.observeState().collectAsState(initial = null).value
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(10.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        FloatingItemList(title = "External NFC Reader") {
+        FloatingItemList(
+            modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+            title = "External NFC Reader"
+        ) {
             FloatingItemHeadingAndText("Name", reader.displayName)
             if (reader is ExternalNfcReaderUsb) {
                 FloatingItemHeadingAndText("Connection", "USB")

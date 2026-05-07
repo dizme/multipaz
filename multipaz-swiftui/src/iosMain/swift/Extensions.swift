@@ -36,3 +36,7 @@ extension Tags: @unchecked Sendable {}
 extension Tags.Editor: @unchecked Sendable {}
 extension PassphraseEvaluation: @unchecked Sendable {}
 extension Document.Editor: @unchecked Sendable {}
+extension DocumentProvisioningSettings: @unchecked Sendable {}
+extension CredentialMetadata: @unchecked Sendable {}
+extension ProvisioningMetadata: @unchecked Sendable {}
+extension DocumentBadge: @unchecked Sendable {}

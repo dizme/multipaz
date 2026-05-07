@@ -2,15 +2,20 @@ package org.multipaz.openid4vci.request
 
 import io.ktor.client.HttpClient
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
+import io.ktor.client.request.headers
+import io.ktor.client.request.request
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.headers
+import io.ktor.http.parameters
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import kotlinx.datetime.LocalDate
+import kotlinx.io.bytestring.ByteString
+import kotlinx.io.bytestring.decodeToString
 import org.multipaz.rpc.handler.InvalidRequestException
 import org.multipaz.rpc.backend.BackendEnvironment
 import org.multipaz.util.fromBase64Url
@@ -21,6 +26,7 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -33,10 +39,11 @@ import org.multipaz.cbor.putCborMap
 import org.multipaz.cbor.toDataItemFullDate
 import org.multipaz.crypto.Algorithm
 import org.multipaz.crypto.EcPublicKey
+import org.multipaz.crypto.X509CertChain
 import org.multipaz.openid4vci.credential.CredentialDisplay
 import org.multipaz.webtoken.ChallengeInvalidException
-import org.multipaz.openid4vci.credential.CredentialFactory
 import org.multipaz.openid4vci.credential.CredentialFactoryRegistry
+import org.multipaz.openid4vci.customization.NonceManager
 import org.multipaz.openid4vci.util.IssuanceState
 import org.multipaz.openid4vci.util.OpaqueIdType
 import org.multipaz.openid4vci.util.authorizeWithDpop
@@ -48,12 +55,16 @@ import org.multipaz.webtoken.WebTokenCheck
 import org.multipaz.util.Logger
 import org.multipaz.webtoken.validateJwt
 import org.multipaz.openid4vci.util.CredentialState
+import org.multipaz.openid4vci.util.SystemOfRecordAccess
 import org.multipaz.openid4vci.util.respondWithNewDPoPNonce
 import org.multipaz.provisioning.CredentialFormat
 import org.multipaz.rpc.backend.Configuration
 import org.multipaz.server.enrollment.ServerIdentity
 import org.multipaz.server.enrollment.validateServerIdentityCertificateChain
 import org.multipaz.util.toBase64Url
+import org.multipaz.util.validateAndroidKeyAttestation
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Issues a credential based on DPoP authentication with access token.
@@ -62,15 +73,18 @@ suspend fun credential(call: ApplicationCall) {
     val accessToken = extractAccessToken(call.request)
     val id = codeToId(OpaqueIdType.ACCESS_TOKEN, accessToken)
     val state = IssuanceState.getIssuanceState(id)
+    val nonceManager = NonceManager.get()
     try {
         authorizeWithDpop(
-            call.request,
-            state.dpopKey!!,
-            state.clientId!!,
-            accessToken
+            request = call.request,
+            publicKey = state.dpopKey!!,
+            clientId = state.clientId!!,
+            accessToken = accessToken,
+            isResourceServer = true,
+            initial = false
         )
     } catch (_: ChallengeInvalidException) {
-        respondWithNewDPoPNonce(call)
+        respondWithNewDPoPNonce(call, nonceManager.credential())
         return
     }
     val registry = BackendEnvironment.getInterface(CredentialFactoryRegistry::class)!!
@@ -88,7 +102,7 @@ suspend fun credential(call: ApplicationCall) {
 
     state.purgeExpiredCredentials()
 
-    val credentialData = readSystemOfRecord(state)
+    val credentialData = readSystemOfRecord(id, state)
 
     val display = factory.display(credentialData)
     val locale = BackendEnvironment.getInterface(Configuration::class)!!
@@ -140,7 +154,10 @@ suspend fun credential(call: ApplicationCall) {
         proofType = proof.jsonObject["proof_type"]?.jsonPrimitive?.content!!
         proofs = buildJsonArray { add(proof.jsonObject[proofType]!!) }
     } else {
-        proofType = if (proofsObj.containsKey("attestation")) {
+        proofType = if (proofsObj.containsKey("android_keystore_attestation")) {
+            // prefer Android attestation to everything else
+            "android_keystore_attestation"
+        } else if (proofsObj.containsKey("attestation")) {
             // prefer attestation
             "attestation"
         } else if (proofsObj.containsKey("jwt")) {
@@ -170,7 +187,7 @@ suspend fun credential(call: ApplicationCall) {
                                 ServerIdentity.KEY_ATTESTATION, chain, instant)
                         }
                     )
-                validateAndConsumeCredentialChallenge(body["nonce"]!!.jsonPrimitive.content)
+                nonceManager.checkAndConsumeCredentialNonce(body["nonce"]!!.jsonPrimitive.content)
                 body["attested_keys"]!!.jsonArray.map { key ->
                     val publicKey = EcPublicKey.fromJwk(key.jsonObject)
                     KeyAndId(
@@ -178,6 +195,38 @@ suspend fun credential(call: ApplicationCall) {
                         id = key.jsonObject["kid"]?.jsonPrimitive?.content ?: keyHash(publicKey)
                     )
                 }
+            }
+        }
+        "android_keystore_attestation" -> {
+            if (!factory.acceptAndroidKeyAttestation) {
+                throw InvalidRequestException(
+                    "android_keystore_attestation proof cannot be used for this credential")
+            }
+            var expectedNonce: ByteString? = null
+            proofs.map { proof ->
+                val chain = X509CertChain.fromX5c(proof)
+                val nonce = validateAndroidKeyAttestation(
+                    chain = chain,
+                    challenge = null,
+                    requireGmsAttestation = true,
+                    requireVerifiedBootGreen = true,
+                    requireKeyMintSecurityLevel = factory.keyMintSecurityLevel,
+                    requireAppSignatureCertificateDigests = setOf(),
+                    requireAppPackages = setOf()
+                )
+                // All nonce values must be the same. Validate the first one and ensure that
+                // the rest of them match the first one.
+                if (expectedNonce == null) {
+                    expectedNonce = nonce
+                    nonceManager.checkAndConsumeCredentialNonce(nonce.decodeToString())
+                } else if (nonce != expectedNonce) {
+                    throw InvalidRequestException("nonce mismatch")
+                }
+                val publicKey = chain.certificates.first().ecPublicKey
+                KeyAndId(
+                    publicKey,
+                    keyHash(publicKey)
+                )
             }
         }
         "jwt" -> {
@@ -207,7 +256,7 @@ suspend fun credential(call: ApplicationCall) {
                 val nonce = body["nonce"]!!.jsonPrimitive.content
                 if (expectedNonce == null) {
                     expectedNonce = nonce
-                    validateAndConsumeCredentialChallenge(nonce)
+                    nonceManager.checkAndConsumeCredentialNonce(nonce)
                 } else if (nonce != expectedNonce) {
                     throw InvalidRequestException("nonce mismatch")
                 }
@@ -284,12 +333,15 @@ private fun JsonObjectBuilder.addDisplay(locale: String, display: CredentialDisp
 
 private const val TAG = "credential"
 
-private suspend fun readSystemOfRecord(state: IssuanceState): DataItem {
-    val systemOfRecordAccess = state.systemOfRecordAccess!!
+private suspend fun readSystemOfRecord(
+    stateId: String,
+    state: IssuanceState
+): DataItem {
     val systemOfRecordUrl = BackendEnvironment.getSystemOfRecordUrl()
     if (systemOfRecordUrl == null) {
         // Running without System of Record (demo/dev mode). Expect basic data encoded
         // as fake access token
+        val systemOfRecordAccess = state.systemOfRecordAccess!!
         val (givenName, familyName, birthDate) = systemOfRecordAccess.accessToken.split(":")
         return buildCborMap {
             putCborMap("core") {
@@ -317,18 +369,68 @@ private suspend fun readSystemOfRecord(state: IssuanceState): DataItem {
         }
     } else {
         val httpClient = BackendEnvironment.getInterface(HttpClient::class)!!
-        val request = httpClient.get("$systemOfRecordUrl/data") {
-            headers {
-                bearerAuth(systemOfRecordAccess.accessToken)
+        var refreshed = false
+        while (true) {
+            val systemOfRecordAccess = state.systemOfRecordAccess!!
+            if (!refreshed &&
+                systemOfRecordAccess.accessTokenExpiration - 1.seconds < Clock.System.now()) {
+                Logger.e(TAG, "System of Record access token expired")
+                refreshSystemOfRecordToken(stateId, state, systemOfRecordUrl)
+                refreshed = true
+                continue
             }
-        }
-        if (request.status != HttpStatusCode.OK) {
+            val request = httpClient.get("$systemOfRecordUrl/data") {
+                headers {
+                    bearerAuth(systemOfRecordAccess.accessToken)
+                }
+            }
+            if (request.status == HttpStatusCode.OK) {
+                return Cbor.decode(request.readRawBytes())
+            }
             val text = request.readRawBytes().decodeToString()
             Logger.e(TAG, "Error accessing data from the System of Record: $text")
-            throw IllegalStateException("Could not access data from System of Record")
+            if (refreshed || request.status != HttpStatusCode.BadRequest) {
+                throw IllegalStateException("Could not access data from System of Record")
+            }
+            refreshSystemOfRecordToken(stateId, state, systemOfRecordUrl)
+            refreshed = true
         }
-        return Cbor.decode(request.readRawBytes())
     }
+}
+
+private suspend fun refreshSystemOfRecordToken(
+    stateId: String,
+    state: IssuanceState,
+    systemOfRecordUrl: String,
+) {
+    Logger.i(TAG, "Updating System of Record access token...")
+    val systemOfRecordAccess = state.systemOfRecordAccess!!
+    val httpClient = BackendEnvironment.getInterface(HttpClient::class)!!
+    val response = httpClient.submitForm(
+        url = "$systemOfRecordUrl/token",
+        formParameters = parameters {
+            append("grant_type", "refresh_token")
+            append("refresh_token", systemOfRecordAccess.refreshToken!!)
+        }
+    )
+    val responseText = response.readRawBytes().decodeToString()
+    if (response.status != HttpStatusCode.OK) {
+        Logger.e(TAG, "token request error: ${response.status}: $responseText")
+        throw IllegalStateException("Could not access refresh System of Record token")
+    }
+    val parsedResponse = Json.parseToJsonElement(responseText).jsonObject
+    state.systemOfRecordAccess = SystemOfRecordAccess(
+        parsedResponse["access_token"]!!.jsonPrimitive.content,
+        accessTokenExpiration = Clock.System.now() +
+                (parsedResponse["expires_in"]?.jsonPrimitive?.intOrNull ?: 60).seconds,
+        refreshToken = parsedResponse["refresh_token"]!!.jsonPrimitive.content,
+    )
+    Logger.i(TAG, "Updated System of Record access token")
+    IssuanceState.updateIssuanceState(
+        issuanceStateId = stateId,
+        issuanceState = state,
+        expiration = null
+    )
 }
 
 private suspend fun keyHash(key: EcPublicKey): String =

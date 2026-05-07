@@ -12,6 +12,7 @@ struct CertificateViewerScreen: View {
             certificates: certificates,
             currentPage: $currentPage
         )
+        .navigationTitle("Certificate Viewer")
     }
 }
 
@@ -57,6 +58,7 @@ private struct CertificateViewerInternal: View {
                 .padding(.bottom, 8)
             }
         }
+        .padding()
     }
 }
 

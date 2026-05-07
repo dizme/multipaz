@@ -13,7 +13,6 @@ import org.multipaz.provisioning.CredentialFormat
 import org.multipaz.provisioning.CredentialMetadata
 import org.multipaz.provisioning.KeyBindingType
 import org.multipaz.provisioning.ProvisioningMetadata
-import org.multipaz.rpc.backend.BackendEnvironment
 import org.multipaz.util.Logger
 
 internal data class IssuerConfiguration(
@@ -66,15 +65,16 @@ internal data class IssuerConfiguration(
                     Logger.e(TAG, "Skipping credential_configuration_id=\"$id\" (format parse failed)", err)
                     continue
                 }
-                credentialConfigurations[id] = CredentialConfiguration(
-                    scope = config.stringOrNull("scope")
-                )
-                val keyProofType = try {
+                val (keyProofType, useAndroidAttestation) = try {
                     extractKeyProofType(id, config, url, clientPreferences)
                 } catch (err: IllegalArgumentException) {
                     Logger.e(TAG, "Skipping credential_configuration_id=\"$id\" (key proof type not supported)", err)
                     continue
                 }
+                credentialConfigurations[id] = CredentialConfiguration(
+                    scope = config.stringOrNull("scope"),
+                    useAndroidAttestation = useAndroidAttestation
+                )
                 credentials[id] = CredentialMetadata(
                     display = extractDisplay(
                         element = config.objOrNull("credential_metadata") ?: config,
@@ -88,6 +88,7 @@ internal data class IssuerConfiguration(
             }
 
             val provisioningMetadata = ProvisioningMetadata(
+                url = url,
                 display = extractDisplay(credentialMetadata, httpClient, clientPreferences),
                 credentials = credentials.toMap()
             )
@@ -121,25 +122,31 @@ internal data class IssuerConfiguration(
             config: JsonObject,
             issuerId: String,
             clientPreferences: OpenID4VCIClientPreferences
-        ): KeyBindingType {
+        ): Pair<KeyBindingType, Boolean> {
             val proofTypes = config.objOrNull("proof_types_supported")
-                ?: return KeyBindingType.Keyless
+                ?: return Pair(KeyBindingType.Keyless, false)
+            val androidAttestation = proofTypes.objOrNull("android_keystore_attestation")
             val attestation = proofTypes.objOrNull("attestation")
             val jwt = proofTypes.objOrNull("jwt")
             val cwt = proofTypes.objOrNull("cwt")
-            val proof = attestation ?: jwt
+            val proof = androidAttestation ?: attestation ?: jwt
             if (proof != null) {
                 val alg = preferredAlgorithm(
                     available = proof.arrayOrNull("proof_signing_alg_values_supported"),
                     clientPreferences = clientPreferences
                 )
-                return if (attestation != null) {
-                    KeyBindingType.Attestation(alg)
+                return if (androidAttestation != null) {
+                    Pair(KeyBindingType.Attestation(alg), true)
+                } else if (attestation != null) {
+                    Pair(KeyBindingType.Attestation(alg), false)
                 } else {
-                    KeyBindingType.OpenidProofOfPossession(
-                        algorithm = alg,
-                        clientId = clientPreferences.clientId,
-                        aud = issuerId
+                    Pair(
+                        KeyBindingType.OpenidProofOfPossession(
+                            algorithm = alg,
+                            clientId = clientPreferences.clientId,
+                            aud = issuerId
+                        ),
+                        false
                     )
                 }
             }
@@ -153,10 +160,13 @@ internal data class IssuerConfiguration(
                     available = cwt.arrayOrNull("proof_signing_alg_values_supported"),
                     clientPreferences = clientPreferences
                 )
-                return KeyBindingType.OpenidProofOfPossession(
-                    algorithm = alg,
-                    clientId = clientPreferences.clientId,
-                    aud = issuerId
+                return Pair(
+                    KeyBindingType.OpenidProofOfPossession(
+                        algorithm = alg,
+                        clientId = clientPreferences.clientId,
+                        aud = issuerId
+                    ),
+                    false
                 )
             }
             throw IllegalArgumentException("No supported proof types")

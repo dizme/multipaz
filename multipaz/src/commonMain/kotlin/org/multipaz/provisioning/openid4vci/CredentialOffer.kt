@@ -126,8 +126,7 @@ internal sealed class CredentialOffer {
             } else {
                 val obj = txCodeJson.jsonObject
                 SecretCodeRequest(
-                    description = obj.stringOrNull("description")
-                        ?: "Enter transaction code that was previously communicated to you",
+                    description = obj.stringOrNull("description"),
                     length = obj.integerOrNull("length") ?: Int.MAX_VALUE,
                     isNumeric = obj.stringOrNull("input_mode") != "text"
                 )

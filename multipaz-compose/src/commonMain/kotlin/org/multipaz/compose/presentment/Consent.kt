@@ -348,7 +348,6 @@ private fun ShowRequesterInfoPage(
     onBackClicked: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.padding(8.dp),
         verticalArrangement = Arrangement.Bottom
     ) {
         Row(
@@ -394,7 +393,9 @@ private fun ShowRequesterInfoPage(
                     ) { page ->
                         val scrollState = rememberScrollState()
                         X509CertViewer(
-                            modifier = Modifier.verticalScroll(scrollState),
+                            modifier = Modifier
+                                .padding(top = 10.dp, bottom = 20.dp, start = 10.dp, end = 10.dp)
+                                .verticalScroll(scrollState),
                             certificate = certChain.certificates[page]
                         )
                     }

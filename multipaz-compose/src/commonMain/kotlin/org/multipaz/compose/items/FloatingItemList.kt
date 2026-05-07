@@ -29,6 +29,10 @@ import androidx.compose.ui.unit.dp
  * See [FloatingItemHeadingAndText], [FloatingItemText], [FloatingItemCenteredText] for things that are normally
  * used inside this container. For your own composable, simply wrap it in [FloatingItemContainer].
  *
+ * The list is rendered to appear raised above the parent container. When using this composable,
+ * make sure to leave 10.dp padding around it and 20.dp at the bottom, to leave enough room for
+ * its shadow.
+ *
  * @param modifier a [Modifier].
  * @param title the title to show above the list or `null`.
  * @param content the items to show inside the list.
@@ -42,7 +46,7 @@ fun FloatingItemList(
     Column(modifier = modifier) {
         if (title != null) {
             Text(
-                modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 0.dp),
+                modifier = Modifier.padding(bottom = 8.dp),
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
@@ -52,13 +56,12 @@ fun FloatingItemList(
 
         Column(
             modifier = Modifier
-                .padding(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 15.dp)
                 .dropShadow(
                     shape = RoundedCornerShape(16.dp),
                     shadow = Shadow(
                         radius = 10.dp,
                         spread = 7.5.dp,
-                        color = Color.Black.copy(alpha = 0.05f),
+                        color = Color.Black.copy(alpha = 0.065f),
                         offset = DpOffset(x = 0.dp, 2.dp)
                     )
                 )

@@ -21,7 +21,7 @@ public struct X509CertViewer: View {
     }
 
     public var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 10) {
             BasicInfoView(data: data)
             SubjectView(data: data)
             IssuerView(data: data)
@@ -29,7 +29,6 @@ public struct X509CertViewer: View {
             ExtensionsView(data: data)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
     }
 }
 

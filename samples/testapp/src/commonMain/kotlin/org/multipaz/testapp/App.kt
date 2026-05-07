@@ -1,5 +1,9 @@
 package org.multipaz.testapp
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +27,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,9 +53,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -70,6 +74,7 @@ import org.multipaz.cbor.DataItem
 import org.multipaz.certext.MultipazExtension
 import org.multipaz.certext.fromCbor
 import org.multipaz.compose.branding.Branding
+import org.multipaz.compose.cards.rememberVerticalCardListState
 import org.multipaz.compose.document.DocumentModel
 import org.multipaz.compose.prompt.PromptDialogs
 import org.multipaz.compose.provisioning.ProvisioningBottomSheet
@@ -84,6 +89,9 @@ import org.multipaz.crypto.X509Cert
 import org.multipaz.crypto.X509CertChain
 import org.multipaz.digitalcredentials.DigitalCredentials
 import org.multipaz.digitalcredentials.getDefault
+import org.multipaz.document.Document
+import org.multipaz.document.DocumentBadge
+import org.multipaz.document.DocumentBadgeColor
 import org.multipaz.document.DocumentStore
 import org.multipaz.document.buildDocumentStore
 import org.multipaz.documenttype.DocumentTypeRepository
@@ -149,7 +157,7 @@ import org.multipaz.testapp.ui.TrustEntryRicalEntryScreen
 import org.multipaz.testapp.ui.TrustEntryScreen
 import org.multipaz.testapp.ui.TrustEntryVicalEntryScreen
 import org.multipaz.testapp.ui.TrustManagerScreen
-import org.multipaz.testapp.ui.VerticalDocumentListScreen
+import org.multipaz.testapp.ui.VerticalCardListScreen
 import org.multipaz.trustmanagement.CompositeTrustManager
 import org.multipaz.trustmanagement.ConfigurableTrustManager
 import org.multipaz.trustmanagement.TrustEntryX509Cert
@@ -233,12 +241,13 @@ class App private constructor (val promptModel: PromptModel) {
             documentTypeRepository = documentTypeRepository,
             zkSystemRepository = zkSystemRepository,
             eventLogger = eventLogger,
+            resolveTrustFn = ::resolveTrust,
             showConsentPromptFn = if (settingsModel.presentmentShowConsentPrompt.value) {
                 ::promptModelRequestConsent
             } else {
                 ::promptModelSilentConsent
             },
-            resolveTrustFn = ::resolveTrust,
+            getBadgesFn = ::getBadgesForDocument,
             preferSignatureToKeyAgreement = settingsModel.presentmentPreferSignatureToKeyAgreement.value,
             domainsMdocSignature = if (useAuth) {
                 listOf(TestAppUtils.CREDENTIAL_DOMAIN_MDOC_USER_AUTH, TestAppUtils.CREDENTIAL_DOMAIN_MDOC_SOFTWARE)
@@ -297,6 +306,7 @@ class App private constructor (val promptModel: PromptModel) {
             val initFuncs = listOf<Pair<suspend () -> Unit, String>>(
                 Pair(TestAppConfiguration::init, "TestAppConfiguration::init"),
                 Pair(::settingsInit, "settingsInit"),
+                Pair(::eventLoggerInit, "eventLoggerInit"),
                 Pair(::platformCryptoInit, "platformCryptoInit"),
                 Pair(::platformExternalNfcTagReadersInit, "platformExternalNfcTagReadersInit"),
                 Pair(::documentTypeRepositoryInit, "documentTypeRepositoryInit"),
@@ -311,7 +321,6 @@ class App private constructor (val promptModel: PromptModel) {
                 Pair(::zkSystemRepositoryInit, "zkSystemRepositoryInit"),
                 Pair(::observeModeInit, "observeModeInit"),
                 Pair(::digitalCredentialsInit, "digitalCredentialsInit"),
-                Pair(::eventLoggerInit, "eventLoggerInit"),
             )
 
             val begin = Clock.System.now()
@@ -384,7 +393,23 @@ class App private constructor (val promptModel: PromptModel) {
         documentModel = DocumentModel.create(
             documentStore = documentStore,
             documentTypeRepository = documentTypeRepository,
+            badgeFunction = ::getBadgesForDocument
         )
+    }
+
+    // For testing of the badge rendering, always add a badge with the document name
+    suspend fun getBadgesForDocument(document: Document): List<DocumentBadge> {
+        val displayName = document.displayName ?: "Unknown Document"
+        val colorRgb = displayName.hashCode()
+        val badge = DocumentBadge(
+            text = displayName,
+            color = DocumentBadgeColor(
+                red = colorRgb.and(0xff),
+                green = colorRgb.rotateRight(8).and(0xff),
+                blue = colorRgb.rotateRight(16).and(0xff),
+            )
+        )
+        return listOf(badge)
     }
 
     private suspend fun trustManagersInit() {
@@ -407,13 +432,14 @@ class App private constructor (val promptModel: PromptModel) {
         provisioningModel = ProvisioningModel(
             documentProvisioningHandler = DocumentProvisioningHandler(
                 documentStore = documentStore,
-                secureArea = secureArea
+                secureArea = secureArea,
             ),
             httpClient = HttpClient(TestAppConfiguration.httpClientEngineFactory) {
                 followRedirects = false
             },
             promptModel = promptModel,
-            authorizationSecureArea = secureArea
+            authorizationSecureArea = secureArea,
+            eventLogger = eventLogger
         )
         provisioningSupport = ProvisioningSupport(
             storage = TestAppConfiguration.storage,
@@ -899,7 +925,7 @@ class App private constructor (val promptModel: PromptModel) {
         private var app: App? = null
         fun getInstance(): App {
             if (app == null) {
-                app = App(TestAppConfiguration.promptModel)
+                app = App(Platform.promptModel)
             }
             return app!!
         }
@@ -1001,8 +1027,10 @@ class App private constructor (val promptModel: PromptModel) {
         }
 
         snackbarHostState = remember { SnackbarHostState() }
+        val verticalCardListState = rememberVerticalCardListState()
 
         val provisioningIssuerUrl = remember { mutableStateOf<String?>(null) }
+
         val currentBranding = Branding.Current.collectAsState().value
         currentBranding.theme {
             PromptDialogs(
@@ -1038,9 +1066,9 @@ class App private constructor (val promptModel: PromptModel) {
                             onDigitalCredentialsReregister = { digitalCredentialsReregister() },
                             onClickAbout = { navController.navigate(AboutDestination) },
                             onClickDocumentStore = { navController.navigate(DocumentStoreDestination) },
-                            onClickDocumentListScreen = {
+                            onClickVerticalCardListScreen = {
                                 navController.navigate(
-                                    DocumentListDestination
+                                    VerticalCardListDestination()
                                 )
                             },
                             onClickTrustedIssuers = {
@@ -1183,15 +1211,40 @@ class App private constructor (val promptModel: PromptModel) {
                                 )
                             },
                             onProvisionMore = { document, authorizationData ->
-                                provisioningModel.launchOpenID4VCIRefreshCredentials(
-                                    document,
-                                    authorizationData,
-                                    provisioningSupport.getOpenID4VCIClientPreferences(),
-                                    provisioningSupport.getOpenID4VCIBackend()
-                                )
+                                coroutineScope.launch {
+                                    val tStart = Clock.System.now()
+                                    try {
+                                        val numNewCredentials =
+                                            provisioningModel.openID4VCIRefreshCredentials(
+                                                document = document,
+                                                authorizationData = authorizationData,
+                                                clientPreferences = provisioningSupport.getOpenID4VCIClientPreferences(),
+                                                backend = provisioningSupport.getOpenID4VCIBackend()
+                                            )
+                                        val duration = Clock.System.now() - tStart
+                                        showToast("Refreshed $numNewCredentials credentials in $duration")
+                                    } catch (e: Throwable) {
+                                        if (e is CancellationException) throw e
+                                        showToast("Error refreshing credentials: $e")
+                                    }
+                                }
+                            },
+                            onDeleteAllCredentials = { document ->
+                                coroutineScope.launch {
+                                    document.getCredentials().map { it.identifier }.forEach { identifier ->
+                                        document.deleteCredential(identifier)
+                                    }
+                                }
                             },
                             onDocumentDeleted = {
                                 navController.navigateUp()
+                            },
+                            onOpenInVerticalCardList = { documentId ->
+                                navController.navigate(
+                                    VerticalCardListDestination(
+                                        focusedDocumentId = documentId,
+                                    )
+                                )
                             }
                         )
                     }
@@ -1218,6 +1271,12 @@ class App private constructor (val promptModel: PromptModel) {
                                         credentialId = credentialId
                                     )
                                 )
+                            },
+                            onCredentialDelete = { documentId, credentialId ->
+                                coroutineScope.launch {
+                                    documentStore.lookupDocument(documentId)?.deleteCredential(credentialId)
+                                }
+                                navController.navigateUp()
                             }
                         )
                     }
@@ -1628,19 +1687,62 @@ class App private constructor (val promptModel: PromptModel) {
                         )
                     }
                 }
-                composable<DocumentListDestination>(
-                    enterTransition = { null },
-                    exitTransition = { null },
-                    popEnterTransition = { null },
-                    popExitTransition = { null }
+                composable<VerticalCardListDestination>(
+                    enterTransition = {
+                        if (initialState.destination.route?.contains("VerticalCardListDestination") == true) EnterTransition.None else null
+                    },
+                    exitTransition = {
+                        if (targetState.destination.route?.contains("VerticalCardListDestination") == true) ExitTransition.None else null
+                    },
+                    popEnterTransition = {
+                        if (initialState.destination.route?.contains("VerticalCardListDestination") == true) EnterTransition.None else null
+                    },
+                    popExitTransition = {
+                        if (targetState.destination.route?.contains("VerticalCardListDestination") == true) ExitTransition.None else null
+                    }
                 ) { backStackEntry ->
-                    // Note: VerticalDocumentListScreen has its own AppBar
-                    VerticalDocumentListScreen(
+                    val destination = backStackEntry.toRoute<VerticalCardListDestination>()
+                    val overrideAnim = backStackEntry.savedStateHandle.get<Boolean>("animateListTransitions")
+                    verticalCardListState.animateListTransitions = overrideAnim ?: destination.animateListTransitions
+
+                    // Note: VerticalCardListScreen has its own AppBar
+                    VerticalCardListScreen(
                         documentStore = documentStore,
                         documentModel = documentModel,
                         settingsModel = settingsModel,
+                        focusedDocumentId = destination.focusedDocumentId,
+                        state = verticalCardListState,
+                        onDocumentFocused = { documentId ->
+                            navController.navigate(VerticalCardListDestination(documentId, animateListTransitions = true))
+                        },
+                        onDocumentUnfocused = {
+                            val previousEntry = navController.previousBackStackEntry
+                            if (previousEntry?.destination?.route?.contains("VerticalCardListDestination") == true) {
+                                previousEntry.savedStateHandle["animateListTransitions"] = true
+                            }
+                            navController.navigateUp()
+                        },
                         onViewDocument = { documentId ->
                             navController.navigate(DocumentViewerDestination(documentId))
+                        },
+                        onFocusDocumentFollowing = { documentId ->
+                            coroutineScope.launch {
+                                val documents = documentStore.listDocuments()
+                                var nextDocument = documents.first()
+                                documents.forEachIndexed { index, document ->
+                                    if (document.identifier == documentId) {
+                                        if (index < documents.size - 1) {
+                                            nextDocument = documents[index + 1]
+                                            return@forEachIndexed
+                                        }
+                                    }
+                                }
+                                navController.navigateUp()
+                                navController.navigate(VerticalCardListDestination(
+                                    focusedDocumentId = nextDocument.identifier,
+                                    animateListTransitions = false
+                                ))
+                            }
                         },
                         onBackPressed = {
                             navController.navigateUp()

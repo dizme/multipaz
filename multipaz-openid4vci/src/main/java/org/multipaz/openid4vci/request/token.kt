@@ -1,17 +1,16 @@
 package org.multipaz.openid4vci.request
 
 import io.ktor.client.HttpClient
-import io.ktor.client.request.headers
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
-import io.ktor.http.encodeURLParameter
+import io.ktor.http.parameters
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.ApplicationRequest
 import io.ktor.server.request.receiveParameters
+import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import org.multipaz.crypto.Algorithm
 import org.multipaz.crypto.Crypto
@@ -25,12 +24,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.multipaz.crypto.EcPublicKey
+import org.multipaz.openid4vci.customization.NonceManager
 import org.multipaz.webtoken.ChallengeInvalidException
 import org.multipaz.openid4vci.util.IssuanceState
 import org.multipaz.openid4vci.util.OpaqueIdType
 import org.multipaz.openid4vci.util.OpenID4VCIRequestError
 import org.multipaz.openid4vci.util.SystemOfRecordAccess
-import org.multipaz.openid4vci.util.addFreshNonceHeaders
 import org.multipaz.openid4vci.util.authorizeWithDpop
 import org.multipaz.openid4vci.util.codeToId
 import org.multipaz.openid4vci.util.getSystemOfRecordUrl
@@ -133,16 +132,23 @@ suspend fun token(call: ApplicationCall) {
         try {
             validateClientAttestationPoP(call.request, clientId, clientAttestationKey)
         } catch (_: ChallengeInvalidException) {
-            respondWithNewClientAttestationChallenge(call)
+            respondWithNewClientAttestationChallenge(call, NonceManager.get().token())
             return
         }
     }
 
     if (state.dpopKey != null) {
         try {
-            authorizeWithDpop(call.request, state.dpopKey!!, clientId, null)
+            authorizeWithDpop(
+                request = call.request,
+                publicKey = state.dpopKey!!,
+                clientId = clientId,
+                accessToken = null,
+                isResourceServer = false,
+                initial = false
+            )
         } catch (_: ChallengeInvalidException) {
-            respondWithNewDPoPNonce(call)
+            respondWithNewDPoPNonce(call, NonceManager.get().token())
             return
         }
     } else {
@@ -165,7 +171,11 @@ suspend fun token(call: ApplicationCall) {
     // If no refresh happens in a year, delete the record
     val refreshExpiration = Clock.System.now() + 365.days
     IssuanceState.updateIssuanceState(id, state, refreshExpiration)
-    addFreshNonceHeaders(call)
+    val nonces = NonceManager.get().token()
+    nonces.dpopNonce?.let { call.response.header("DPoP-Nonce", it) }
+    nonces.clientAttestationNonce?.let {
+        call.response.header("OAuth-Client-Attestation-Challenge", it)
+    }
     call.respondText(
         text = buildJsonObject {
                 put("access_token", accessToken)
@@ -192,7 +202,8 @@ private suspend fun establishDPopKey(
         publicKey = dpopKey,
         clientId = state.clientId!!,
         accessToken = null,
-        initial = true  // no nonce, no need to handle ChallengeInvalidException
+        isResourceServer = false,
+        initial = true
     )
     state.dpopKey = dpopKey
     return dpopKey
@@ -201,20 +212,15 @@ private suspend fun establishDPopKey(
 private const val TAG = "token"
 
 private suspend fun obtainSystemOfRecordToken(systemOfRecordUrl: String, state: IssuanceState) {
-    val req = buildMap {
-        put("grant_type", "authorization_code")
-        put("code", state.systemOfRecordAuthCode!!)
-        put("code_verifier", state.systemOfRecordCodeVerifier!!.toByteArray().toBase64Url())
-    }
     val httpClient = BackendEnvironment.getInterface(HttpClient::class)!!
-    val response = httpClient.post("$systemOfRecordUrl/token") {
-        headers {
-            append("Content-Type", "application/x-www-form-urlencoded")
+    val response = httpClient.submitForm(
+        url = "$systemOfRecordUrl/token",
+        formParameters = parameters {
+            append("grant_type", "authorization_code")
+            append("code", state.systemOfRecordAuthCode!!)
+            append("code_verifier", state.systemOfRecordCodeVerifier!!.toByteArray().toBase64Url())
         }
-        setBody(req.map { (name, value) ->
-            name.encodeURLParameter() + "=" + value.encodeURLParameter()
-        }.joinToString("&"))
-    }
+    )
     val responseText = response.readRawBytes().decodeToString()
     if (response.status != HttpStatusCode.OK) {
         Logger.e(TAG, "token request error: ${response.status}: $responseText")

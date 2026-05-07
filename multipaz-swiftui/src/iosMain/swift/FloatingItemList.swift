@@ -29,10 +29,13 @@ public struct FloatingItemList<Content: View>: View {
                     .font(.subheadline) // Equivalent to bodyMedium
                     .fontWeight(.bold)
                     .foregroundColor(.secondary)
+                    .padding(.bottom, 8)
+                /*
                     .padding(.leading, 10)
                     .padding(.top, 10)
                     .padding(.trailing, 10)
                     .padding(.bottom, 5) // Adjusted slightly to flow into the list naturally
+                 */
             }
 
             VStack(spacing: 1) { // Spacing creates the divider effect
@@ -47,10 +50,12 @@ public struct FloatingItemList<Content: View>: View {
                 x: 0,
                 y: 2
             )
+            /*
             .padding(.leading, 10)
             .padding(.trailing, 10)
             .padding(.top, title == nil ? 10 : 5)
             .padding(.bottom, 15)
+            */
         }
     }
 }

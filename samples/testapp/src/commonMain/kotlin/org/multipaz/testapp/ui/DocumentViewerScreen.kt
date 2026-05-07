@@ -42,7 +42,9 @@ fun DocumentViewerScreen(
     showToast: (message: String) -> Unit,
     onViewCredential: (documentId: String, credentialId: String) -> Unit,
     onProvisionMore: (document: Document, authorizationData: ByteString) -> Unit,
-    onDocumentDeleted: () -> Unit
+    onDeleteAllCredentials: (document: Document) -> Unit,
+    onDocumentDeleted: () -> Unit,
+    onOpenInVerticalCardList: (documentId: String) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     val documentInfos = documentModel.documentInfos.collectAsState().value
@@ -107,6 +109,24 @@ fun DocumentViewerScreen(
                     Button(
                         modifier = Modifier.weight(1.0f),
                         onClick = {
+                            onOpenInVerticalCardList(documentId)
+                        },
+                    ) {
+                        Text(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            text = "Open in Vertical Card List"
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp, horizontal = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Button(
+                        modifier = Modifier.weight(1.0f),
+                        onClick = {
                             coroutineScope.launch {
                                 documentStore.deleteDocument(documentId)
                             }
@@ -143,6 +163,11 @@ fun DocumentViewerScreen(
                         if (credentialInfo.credential.domain != domain) {
                             continue
                         }
+                        val keyText = if (credentialInfo.credential.isCertified) {
+                            credentialInfo.credential.credentialType
+                        } else {
+                            "${credentialInfo.credential.credentialType} (Pending)"
+                        }
                         KeyValuePairText(
                             modifier = Modifier
                                 .padding(start = 24.dp)
@@ -152,7 +177,7 @@ fun DocumentViewerScreen(
                                         credentialInfo.credential.identifier
                                     )
                                 },
-                            keyText = credentialInfo.credential.credentialType,
+                            keyText = keyText,
                             valueText = buildAnnotatedString {
                                 withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.secondary)) {
                                     append("Usage count ${credentialInfo.credential.usageCount}. Click for details")
@@ -165,7 +190,18 @@ fun DocumentViewerScreen(
                     Button(onClick = {
                         onProvisionMore(documentInfo.document, authorizationData)
                     }) {
-                        Text("Provision more credentials")
+                        Text("Refresh credentials")
+                    }
+                    Button(
+                        onClick = {
+                            onDeleteAllCredentials(documentInfo.document)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Delete all credentials")
                     }
                 }
             }

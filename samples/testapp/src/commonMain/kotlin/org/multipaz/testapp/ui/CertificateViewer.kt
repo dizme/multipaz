@@ -64,7 +64,7 @@ private fun CertificateViewerInternal(
 ) {
     check(certificates.isNotEmpty())
     Box(
-        modifier = modifier.fillMaxHeight().padding(8.dp)
+        modifier = modifier.fillMaxHeight()
     ) {
         val listSize = certificates.size
         val pagerState = rememberPagerState(pageCount = { listSize })
@@ -82,7 +82,9 @@ private fun CertificateViewerInternal(
             ) { page ->
                 val scrollState = rememberScrollState()
                 X509CertViewer(
-                    modifier = Modifier.verticalScroll(scrollState),
+                    modifier = Modifier
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 10.dp),
                     certificate = certificates[page]
                 )
             }

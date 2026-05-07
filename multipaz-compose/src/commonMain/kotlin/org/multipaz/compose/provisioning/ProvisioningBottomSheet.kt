@@ -65,6 +65,8 @@ import org.multipaz.multipaz_compose.generated.resources.provisioning_requestion
 import org.multipaz.multipaz_compose.generated.resources.provisioning_retry
 import org.multipaz.multipaz_compose.generated.resources.provisioning_select_credential
 import org.multipaz.multipaz_compose.generated.resources.provisioning_title
+import org.multipaz.multipaz_compose.generated.resources.provisioning_tx_code_fallback_prompt
+import org.multipaz.multipaz_compose.generated.resources.provisioning_tx_code_fallback_prompt_numeric
 import org.multipaz.provisioning.AuthorizationChallenge
 import org.multipaz.provisioning.AuthorizationException
 import org.multipaz.provisioning.AuthorizationResponse
@@ -426,19 +428,19 @@ private fun ProvisioningBottomSheetContent(
         }
 
         else -> {
-            val text = stringResource(
-                when (provisioningState) {
-                    ProvisioningModel.Idle -> throw IllegalStateException()
-                    ProvisioningModel.Initial -> Res.string.provisioning_initial
-                    ProvisioningModel.Connected -> Res.string.provisioning_connected
-                    ProvisioningModel.ProcessingAuthorization -> Res.string.provisioning_processing_authorization
-                    ProvisioningModel.Authorized -> Res.string.provisioning_authorized
-                    ProvisioningModel.RequestingCredentials -> Res.string.provisioning_requestion_credentials
-                    is ProvisioningModel.CredentialsIssued -> Res.string.provisioning_credentials_issued
-                    is ProvisioningModel.Error -> throw IllegalStateException()
-                    is ProvisioningModel.Authorizing -> throw IllegalStateException()
+            val text = when (provisioningState) {
+                ProvisioningModel.Idle -> throw IllegalStateException()
+                ProvisioningModel.Initial -> stringResource(Res.string.provisioning_initial)
+                ProvisioningModel.Connected -> stringResource(Res.string.provisioning_connected)
+                ProvisioningModel.ProcessingAuthorization -> stringResource(Res.string.provisioning_processing_authorization)
+                ProvisioningModel.Authorized -> stringResource(Res.string.provisioning_authorized)
+                ProvisioningModel.RequestingCredentials -> stringResource(Res.string.provisioning_requestion_credentials)
+                is ProvisioningModel.CredentialsIssued -> {
+                    stringResource(Res.string.provisioning_credentials_issued, provisioningState.numCredentialsFetched)
                 }
-            )
+                is ProvisioningModel.Error -> throw IllegalStateException()
+                is ProvisioningModel.Authorizing -> throw IllegalStateException()
+            }
             Text(
                 modifier = Modifier
                     .padding(16.dp, 4.dp),
@@ -536,12 +538,17 @@ private fun EvidenceRequestSecretText(
         maxLength = passphraseRequest.length ?: 10,
         passphraseRequest.isNumeric
     )
+    val fallback = if (passphraseRequest.isNumeric) {
+        stringResource(Res.string.provisioning_tx_code_fallback_prompt_numeric)
+    } else {
+        stringResource(Res.string.provisioning_tx_code_fallback_prompt)
+    }
     Column {
         Text(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
                 .padding(16.dp, 8.dp),
-            text = passphraseRequest.description
+            text = passphraseRequest.description ?: fallback
         )
         if (challenge.retry) {
             Text(

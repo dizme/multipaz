@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,7 +62,10 @@ fun TrustEntryVicalEntryViewer(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        FloatingItemList(title = stringResource(Res.string.trust_entry_vical_entry_title)) {
+        FloatingItemList(
+            modifier = Modifier.padding(top = 10.dp, bottom = 20.dp),
+            title = stringResource(Res.string.trust_entry_vical_entry_title)
+        ) {
             FloatingItemHeadingAndText(
                 heading = stringResource(Res.string.trust_entry_vical_entry_document_types),
                 text = vicalCertInfo.docTypes.joinToString("\n")
