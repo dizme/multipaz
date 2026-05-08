@@ -176,12 +176,14 @@ Parameters.build {
 
 **Change:** `uriSchemePresentment.kt` — use `ContentType.Application.Json` matching on the POST response to `response_uri`. If the verifier returns a non-2xx status (e.g. **500** when VP/DCQL validation fails on walt.id), the thrown exception now includes **status, URI, and response body** so logs are not only a generic “Check failed”.
 
-### X.509 trust (`x509_san_dns`, single-certificate chain)
+### X.509 trust (`x509_san_dns`, single-certificate chain) — setup requirement, not a patch
 
-With a signed request and an X.509 chain reduced to a **single** certificate, `TrustManagerUtil.verifyX509TrustChain` may try to match a trust anchor via **Subject Key Identifier** (SKI). If the certificate has **no SKI** extension, the old code used `!!` and threw **NPE**; the lookup is now optional (`subjectKeyIdentifier?.toHex()`), and without a configured anchor the result is **untrusted** instead of a crash.
+With a signed request and an X.509 chain reduced to a **single** certificate, `TrustManagerUtil.verifyX509TrustChain` matches the trust anchor via **Subject Key Identifier** (SKI). The upstream behavior is preserved (no SKI → not a valid input).
+
+**Implication for the walt.id stack:** the certificate used by **Verifier2** to sign the `request_object` JWT (the one published in `x5c`) **must include the SKI extension**. Our `verifier-api2/config/verifier.crt` is generated with `subjectKeyIdentifier` and the matching `x5c` entry in `verifier-service.conf` is bit-identical to that cert. Do **not** regenerate it with tools that omit SKI (e.g. plain `mkcert`) — RFC 5280 recommends SKI on signing certificates, and Multipaz upstream relies on it for single-certificate chain anchoring.
 
 ---
 
 ## Summary
 
-These changes tighten **JWK** output, make **issuer metadata** loading more resilient and cache-free, accept **walt.id** credential response shapes, adjust **OpenID4VP presentment** for plain `direct_post`, improve **error visibility** from the verifier, and fix **X.509 trust** handling when SKI is absent—see [`README.upstream.md`](README.upstream.md) for the full upstream Multipaz overview.
+These changes tighten **JWK** output, make **issuer metadata** loading more resilient and cache-free, accept **walt.id** credential response shapes, adjust **OpenID4VP presentment** for plain `direct_post`, and improve **error visibility** from the verifier — see [`README.upstream.md`](README.upstream.md) for the full upstream Multipaz overview.
