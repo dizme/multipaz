@@ -55,6 +55,13 @@ lokalize {
     
     // Optional: Custom resources directory
     resourcesDir.set("src/commonMain/resources")
+
+    // Optional: Override the packages used for the generated code so that
+    // multiple modules (e.g. multipaz-doctypes and multipaz-utopia) can each
+    // produce their own GeneratedTranslations / GeneratedStringKeys without
+    // colliding. Defaults target multipaz-doctypes.
+    generatedTranslationsPackageName.set("org.multipaz.utopia.generated")
+    stringKeysPackageName.set("org.multipaz.utopia.localization")
 }
 ```
 
@@ -142,6 +149,8 @@ val languages = GeneratedTranslations.allLanguages
 | `llmProvider` | `LLMProvider` | `GOOGLE` | LLM provider to use |
 | `llModel` | `LLmModel` | `GEMINI2_0_FLASH` | Specific model |
 | `resourcesDir` | `Property<String>` | `"src/commonMain/composeResources"` | Resources base path |
+| `generatedTranslationsPackageName` | `Property<String>` | `"org.multipaz.doctypes.generated"` | Package for the generated `GeneratedTranslations` and per-language `Strings_*` files |
+| `stringKeysPackageName` | `Property<String>` | `"org.multipaz.doctypes.localization"` | Package for the generated `GeneratedStringKeys` object |
 
 ### Output Formats
 
@@ -426,6 +435,30 @@ export LOKALIZE_API_KEY="your-key"
 
 # Generate Kotlin code from JSON resources
 ./gradlew :multipaz-doctypes:generateMultipazStrings
+```
+
+### Example: multipaz-utopia (JSON format, custom packages)
+
+`multipaz-utopia` carries its own copy of the lokalize pipeline so that
+applications consuming only `multipaz-doctypes` don't ship Utopia-specific
+strings. It overrides the generated package names so its
+`GeneratedTranslations` / `GeneratedStringKeys` live alongside the Utopia
+code instead of in the doctypes namespace:
+
+```kotlin
+// multipaz-utopia/build.gradle.kts
+lokalize {
+    outputFormat.set(OutputFormat.JSON)
+    resourcesDir.set("src/commonMain/resources")
+    generatedTranslationsPackageName.set("org.multipaz.utopia.generated")
+    stringKeysPackageName.set("org.multipaz.utopia.localization")
+}
+```
+
+```bash
+./gradlew :multipaz-utopia:lokalizeCheck
+./gradlew :multipaz-utopia:lokalizeFix      # requires LOKALIZE_API_KEY
+./gradlew :multipaz-utopia:generateMultipazStrings
 ```
 
 ## CI/CD Integration

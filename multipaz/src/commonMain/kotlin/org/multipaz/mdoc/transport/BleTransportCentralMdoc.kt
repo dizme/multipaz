@@ -5,6 +5,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlin.time.Instant
 import org.multipaz.crypto.EcPublicKey
@@ -34,7 +38,9 @@ internal class BleTransportCentralMdoc(
         private const val TAG = "BleTransportCentralMdoc"
     }
 
+    private val transportScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val mutex = Mutex()
+    @Volatile
     private var currentJob: Job? = null
 
     private val _state = MutableStateFlow<State>(State.IDLE)
@@ -62,7 +68,7 @@ internal class BleTransportCentralMdoc(
         )
         centralManager.setCallbacks(
             onError = { error ->
-                CoroutineScope(Dispatchers.Default).launch {
+                transportScope.launch {
                     currentJob?.cancel("onError was called", error)
                     mutex.withLock {
                         failTransport(error)
@@ -70,7 +76,7 @@ internal class BleTransportCentralMdoc(
                 }
             },
             onClosed = {
-                CoroutineScope(Dispatchers.Default).launch {
+                transportScope.launch {
                     mutex.withLock {
                         closeWithoutDelay()
                     }
@@ -91,44 +97,46 @@ internal class BleTransportCentralMdoc(
         var timeScanningStarted: Instant
         mutex.withLock {
             check(_state.value == State.IDLE) { "Expected state IDLE, got ${_state.value}" }
-            try {
-                coroutineScope {
-                    currentJob = launch {
-                        _state.value = State.SCANNING
-                        centralManager.waitForPowerOn()
-                        timeScanningStarted = Clock.System.now()
-                        centralManager.waitForPeripheralWithUuid(uuid)
-                        _scanningTime = Clock.System.now() - timeScanningStarted
-                        _state.value = State.CONNECTING
-                        if (psm != null) {
-                            // If the PSM is known at engagement-time we can bypass the entire GATT server
-                            // and just connect directly.
-                            Logger.i(TAG, "Connecting directly to PSM $psm")
-                            centralManager.connectL2cap(psm)
-                        } else {
-                            centralManager.connectToPeripheral()
-                            centralManager.requestMtu()
-                            centralManager.peripheralDiscoverServices(uuid)
-                            centralManager.peripheralDiscoverCharacteristics()
-                            centralManager.checkReaderIdentMatches(eSenderKey)
-                            if (centralManager.l2capPsm != null) {
-                                centralManager.connectL2cap(centralManager.l2capPsm!!)
-                            } else {
-                                centralManager.subscribeToCharacteristics()
-                                centralManager.writeToStateCharacteristic(BleTransportConstants.STATE_CHARACTERISTIC_START)
-                            }
-                        }
-                        _state.value = State.CONNECTED
+            _state.value = State.SCANNING
+        }
+        try {
+            coroutineScope {
+                currentJob = coroutineContext[Job]
+                centralManager.waitForPowerOn()
+                timeScanningStarted = Clock.System.now()
+                centralManager.waitForPeripheralWithUuid(uuid)
+                _scanningTime = Clock.System.now() - timeScanningStarted
+                mutex.withLock { _state.value = State.CONNECTING }
+                if (psm != null) {
+                    // If the PSM is known at engagement-time we can bypass the entire GATT server
+                    // and just connect directly.
+                    Logger.i(TAG, "Connecting directly to PSM $psm")
+                    centralManager.connectL2cap(psm)
+                } else {
+                    centralManager.connectToPeripheral()
+                    centralManager.requestMtu()
+                    centralManager.peripheralDiscoverServices(uuid)
+                    centralManager.peripheralDiscoverCharacteristics()
+                    centralManager.checkReaderIdentMatches(eSenderKey)
+                    if (centralManager.l2capPsm != null) {
+                        centralManager.connectL2cap(centralManager.l2capPsm!!)
+                    } else {
+                        centralManager.subscribeToCharacteristics()
+                        centralManager.writeToStateCharacteristic(BleTransportConstants.STATE_CHARACTERISTIC_START)
                     }
                 }
-            } catch (error: Exception) {
-                error.unwrapCancellationException().let {
-                    failTransport(it)
-                    throw it.wrapUnlessCancellationException("Failed while opening transport")
-                }
-            } finally {
-                currentJob = null
+                mutex.withLock { _state.value = State.CONNECTED }
             }
+        } catch (error: Exception) {
+            val unwrapped = error.unwrapCancellationException()
+            if (unwrapped is CancellationException) {
+                throw unwrapped
+            } else {
+                mutex.withLock { failTransport(unwrapped) }
+                throw unwrapped.wrapUnlessCancellationException("Failed while opening transport")
+            }
+        } finally {
+            currentJob = null
         }
     }
 
@@ -158,24 +166,26 @@ internal class BleTransportCentralMdoc(
             if (message.isEmpty() && centralManager.usingL2cap) {
                 throw MdocTransportTerminationException("Transport-specific termination not available with L2CAP")
             }
-            try {
-                coroutineScope {
-                    currentJob = launch {
-                        if (message.isEmpty()) {
-                            centralManager.writeToStateCharacteristic(BleTransportConstants.STATE_CHARACTERISTIC_END)
-                        } else {
-                            centralManager.sendMessage(message)
-                        }
-                    }
+        }
+        try {
+            coroutineScope {
+                currentJob = coroutineContext[Job]
+                if (message.isEmpty()) {
+                    centralManager.writeToStateCharacteristic(BleTransportConstants.STATE_CHARACTERISTIC_END)
+                } else {
+                    centralManager.sendMessage(message)
                 }
-            } catch (error: Exception) {
-                throw error.unwrapCancellationException().let {
-                    failTransport(it)
-                    it.wrapUnlessCancellationException("Failed while sending message")
-                }
-            } finally {
-                currentJob = null
             }
+        } catch (error: Exception) {
+            val unwrapped = error.unwrapCancellationException()
+            if (unwrapped is CancellationException) {
+                throw unwrapped
+            } else {
+                mutex.withLock { failTransport(unwrapped) }
+                throw unwrapped.wrapUnlessCancellationException("Failed while sending message")
+            }
+        } finally {
+            currentJob = null
         }
     }
 
@@ -195,11 +205,12 @@ internal class BleTransportCentralMdoc(
         _state.value = State.CLOSED
     }
 
-    override suspend fun close() {
+    override suspend fun close() = withContext(NonCancellable) {
         currentJob?.cancel("close() was called")
+        transportScope.cancel("Transport closed")
         mutex.withLock {
             if (_state.value == State.FAILED || _state.value == State.CLOSED) {
-                return
+                return@withContext
             }
             closeWithoutDelay()
         }

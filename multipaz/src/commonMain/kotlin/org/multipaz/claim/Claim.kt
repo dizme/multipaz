@@ -230,7 +230,7 @@ private fun jsonFindMatchingClaimValue(
                     it.identifier == pathComponent.jsonPrimitive.content
                 }
             } else {
-                throw Error("Can only select from object or array of objects")
+                throw IllegalStateException("Can only select from object or array of objects")
             }
         } else if (pathComponent.isNumber) {
             currentObject = currentObject!!.jsonArray[pathComponent.jsonPrimitive.int]

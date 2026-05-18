@@ -104,6 +104,7 @@ object TestAppUtils {
         request: DocumentCannedRequest,
         encodedSessionTranscript: ByteArray,
         readerKey: AsymmetricKey.X509Compatible,
+        signRequest: Boolean = true,
         zkSystemRepository: ZkSystemRepository? = null,
     ): ByteArray {
         val deviceRequest = when (request) {
@@ -138,15 +139,26 @@ object TestAppUtils {
                                 taggedItem = Cbor.encode(transactionData.attributes).toDataItem()
                             )
                         }
-                        addDocRequest(
-                            docType = mdocRequest.docType,
-                            nameSpaces = itemsToRequest,
-                            docRequestInfo = DocRequestInfo(
-                                zkRequest = zkRequest,
-                                otherInfo = otherInfo
-                            ),
-                            readerKey = readerKey,
-                        )
+                        if (signRequest) {
+                            addDocRequest(
+                                docType = mdocRequest.docType,
+                                nameSpaces = itemsToRequest,
+                                docRequestInfo = DocRequestInfo(
+                                    zkRequest = zkRequest,
+                                    otherInfo = otherInfo
+                                ),
+                                readerKey = readerKey,
+                            )
+                        } else {
+                            addDocRequest(
+                                docType = mdocRequest.docType,
+                                nameSpaces = itemsToRequest,
+                                docRequestInfo = DocRequestInfo(
+                                    zkRequest = zkRequest,
+                                    otherInfo = otherInfo
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -155,7 +167,9 @@ object TestAppUtils {
                     sessionTranscript = RawCbor(encodedSessionTranscript),
                     dcql = Json.decodeFromString<JsonObject>( request.dcqlString)
                 ) {
-                    addReaderAuthAll(readerKey)
+                    if (signRequest) {
+                        addReaderAuthAll(readerKey)
+                    }
                 }
             }
         }

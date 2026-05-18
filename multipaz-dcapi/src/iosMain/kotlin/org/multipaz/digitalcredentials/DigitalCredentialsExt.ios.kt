@@ -117,7 +117,7 @@ private suspend fun updateOsCredentialManagerUnlocked(
             SwiftBridge.docRegGetAll { docIds, error ->
                 if (error != null) {
                     continuation.resumeWithException(
-                        Error("Error getting registered document ids", error.toKotlinError())
+                        IllegalStateException("Error getting registered document ids", error.toKotlinError())
                     )
                 } else {
                     continuation.resume((docIds as List<String>).toSet())
@@ -152,7 +152,7 @@ private suspend fun updateOsCredentialManagerUnlocked(
                             continuation.resume(true)
                         } else {
                             continuation.resumeWithException(
-                                Error("Credential registration failed", error.toKotlinError())
+                                IllegalStateException("Credential registration failed", error.toKotlinError())
                             )
                         }
                     } else {
@@ -175,7 +175,7 @@ private suspend fun updateOsCredentialManagerUnlocked(
                 // Matching on the error like this is a little bit of a hack but it does work...
                 if (error != null) {
                     continuation.resumeWithException(
-                        Error("Credential registration failed", error.toKotlinError())
+                        IllegalStateException("Credential registration failed", error.toKotlinError())
                     )
                 } else {
                     Logger.i(TAG, "Unregistered document with docId $docId")

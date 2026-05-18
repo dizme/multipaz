@@ -1,12 +1,14 @@
 @file:OptIn(ExperimentalWasmDsl::class)
 
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.multipaz.lokalize.util.OutputFormat
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
     id("maven-publish")
     id("org.jetbrains.dokka") version "2.1.0"
+    id("org.multipaz.lokalize.convention")
 }
 
 val projectVersionCode: Int by rootProject.extra
@@ -124,6 +126,21 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    sourceSets {
+        getByName("main") {
+            assets {
+                srcDirs("src/commonMain/resources")
+            }
+        }
+    }
+}
+
+lokalize {
+    outputFormat.set(OutputFormat.JSON)
+    resourcesDir.set("src/commonMain/resources")
+    generatedTranslationsPackageName.set("org.multipaz.utopia.generated")
+    stringKeysPackageName.set("org.multipaz.utopia.localization")
 }
 
 version = projectVersionName

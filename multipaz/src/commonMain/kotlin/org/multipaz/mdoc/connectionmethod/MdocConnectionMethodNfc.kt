@@ -14,6 +14,7 @@ import org.multipaz.util.ByteDataReader
 import org.multipaz.util.appendByteString
 import org.multipaz.util.appendUInt16
 import org.multipaz.util.appendUInt8
+
 /**
  * Connection method for NFC.
  *

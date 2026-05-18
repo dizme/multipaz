@@ -39,6 +39,7 @@ import org.multipaz.crypto.Crypto
 import org.multipaz.crypto.EcPrivateKey
 import org.multipaz.crypto.X509Cert
 import org.multipaz.openid4vci.credential.CredentialFactoryDigitalPaymentCredential
+import org.multipaz.openid4vci.credential.CredentialFactoryDigitalPaymentCredentialSdJwt
 import org.multipaz.openid4vci.credential.CredentialFactoryMdl
 import org.multipaz.openid4vci.credential.CredentialFactoryRegistry
 import org.multipaz.openid4vci.credential.CredentialFactoryUtopiaNaturalization
@@ -95,7 +96,8 @@ class ProvisioningClientTest {
             listOf(
                 CredentialFactoryMdl(),
                 CredentialFactoryUtopiaNaturalization(),
-                CredentialFactoryDigitalPaymentCredential()
+                CredentialFactoryDigitalPaymentCredential(),
+                CredentialFactoryDigitalPaymentCredentialSdJwt()
             )
         )
         credentalFactoryRegistry.initialize()
@@ -156,6 +158,18 @@ class ProvisioningClientTest {
     fun authorizationCodeWithPaymentCredential() {
         runWithAuthorizationCode(
             offer = OFFER_PAYMENT,
+            serverArgs = arrayOf(
+                "-param", "base_url=http://localhost",
+                "-param", "database_engine=ephemeral",
+                "-param", "use_scopes=true"
+            )
+        )
+    }
+
+    @Test
+    fun authorizationCodeWithPaymentCredentialSdJwt() {
+        runWithAuthorizationCode(
+            offer = OFFER_PAYMENT_SD_JWT,
             serverArgs = arrayOf(
                 "-param", "base_url=http://localhost",
                 "-param", "database_engine=ephemeral",
@@ -524,6 +538,7 @@ class ProvisioningClientTest {
         const val OFFER_MDL = "openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%22%2C%22credential_configuration_ids%22%3A%5B%22mDL%22%5D%2C%22grants%22%3A%7B%22authorization_code%22%3A%7B%7D%7D%7D"
         const val OFFER_NATURALIZATION = "openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%22%2C%22credential_configuration_ids%22%3A%5B%22utopia_naturalization%22%5D%2C%22grants%22%3A%7B%22authorization_code%22%3A%7B%7D%7D%7D"
         const val OFFER_PAYMENT = "openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%22%2C%22credential_configuration_ids%22%3A%5B%22payment_sca_mdoc%22%5D%2C%22grants%22%3A%7B%22authorization_code%22%3A%7B%7D%7D%7D"
+        const val OFFER_PAYMENT_SD_JWT = "openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22http%3A%2F%2Flocalhost%22%2C%22credential_configuration_ids%22%3A%5B%22payment_sca_sd_jwt%22%5D%2C%22grants%22%3A%7B%22authorization_code%22%3A%7B%7D%7D%7D"
 
         val testClientPreferences = OpenID4VCIClientPreferences(
             clientId = "urn:uuid:418745b8-78a3-4810-88df-7898aff3ffb4",

@@ -391,7 +391,8 @@ private suspend fun doDcRequestFlow(
         responseSize = Json.encodeToString(dcResponseObject).length.toLong(),
         durationMsecNfcTapToEngagement = null,
         durationMsecEngagementReceivedToRequestSent = null,
-        durationMsecRequestSentToResponseReceived = (Clock.System.now() - t0).inWholeMilliseconds
+        durationMsecRequestSentToResponseReceived = (Clock.System.now() - t0).inWholeMilliseconds,
+        nfcHybridTransportStats = null
     )
     when (dcResponse) {
         is MdocApiDcResponse -> {

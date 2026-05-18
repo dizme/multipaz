@@ -316,11 +316,11 @@ class NfcTransportMdoc(
                 Nfc.INS_ENVELOPE -> return processEnvelope(command)
                 Nfc.INS_GET_RESPONSE -> return processGetResponse(command)
             }
-            failTransport(Error("Command APDU $command not supported, returning 6d00"))
+            failTransport(IllegalStateException("Command APDU $command not supported, returning 6d00"))
             return ResponseApdu(Nfc.RESPONSE_STATUS_ERROR_INSTRUCTION_NOT_SUPPORTED_OR_INVALID)
         } catch (error: Exception) {
             error.printStackTrace()
-            failTransport(Error("Error processing APDU: ${error.message}", error))
+            failTransport(IllegalStateException("Error processing APDU: ${error.message}", error))
             val status = if (error is NfcError) {
                 error.status
             } else {
@@ -333,7 +333,7 @@ class NfcTransportMdoc(
     internal suspend fun onDeactivated() {
         mutex.withLock {
             instances.remove(this)
-            failTransport(Error("onDeactivated"))
+            failTransport(IllegalStateException("onDeactivated"))
         }
     }
 }

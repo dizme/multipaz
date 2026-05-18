@@ -51,7 +51,7 @@ class MdocNfcEngagementHelper(
         connectionMethods: List<MdocConnectionMethod>,
         encodedDeviceEngagement: ByteString,
         handover: DataItem) -> Unit,
-    val onError: (error: Throwable) -> Unit,
+    val onError: (error: Exception) -> Unit,
     val staticHandoverMethods: List<MdocConnectionMethod>? = null,
     val negotiatedHandoverPicker: ((connectionMethods: List<MdocConnectionMethod>) -> MdocConnectionMethod)? = null,
 ) {
@@ -93,7 +93,7 @@ class MdocNfcEngagementHelper(
     private fun raiseError(errorMessage: String, cause: Throwable? = null) {
         check(!raisedError && !raisedHandoverComplete)
         raisedError = true
-        onError(Error(errorMessage, cause))
+        onError(IllegalStateException(errorMessage, cause))
     }
 
     private fun raiseHandoverComplete(
@@ -217,7 +217,7 @@ class MdocNfcEngagementHelper(
     private suspend fun ndefTransactHandleServiceSelect(message: NdefMessage): NdefMessage {
         check(message.records.size == 1) { "Expected just a single record for service select" }
         val serviceSelectRecord = ServiceSelectRecord.fromNdefRecord(message.records[0])
-            ?: throw Error("Service Select record not found")
+            ?: throw IllegalStateException("Service Select record not found")
         check(serviceSelectRecord.serviceName == Nfc.SERVICE_NAME_CONNECTION_HANDOVER) {
             "Expected service ${Nfc.SERVICE_NAME_CONNECTION_HANDOVER} found ${serviceSelectRecord.serviceName}"
         }
@@ -234,7 +234,7 @@ class MdocNfcEngagementHelper(
     private suspend fun ndefTransactHandleHandoverRequest(message: NdefMessage): NdefMessage {
         // Handover Request Record must be the first record in Handover Request Message..
         val hrRecord = HandoverRequestRecord.fromNdefRecord(message.records[0])
-            ?: throw Error("Handover Request Record not the first in message")
+            ?: throw IllegalStateException("Handover Request Record not the first in message")
         check(hrRecord.version == 0x15) {
             "Expected Connection Handover version 1.5, got ${byteArrayOf(hrRecord.version.toByte()).toHex()}"
         }
@@ -246,7 +246,7 @@ class MdocNfcEngagementHelper(
             }
         }
         if (availableConnectionMethods.isEmpty()) {
-            throw Error("No supported connection methods found in Handover Request method")
+            throw IllegalStateException("No supported connection methods found in Handover Request method")
         }
         val disambiguatedConnectionMethods = MdocConnectionMethod.disambiguate(
             availableConnectionMethods,
@@ -334,10 +334,10 @@ class MdocNfcEngagementHelper(
 
     private suspend fun ndefTransact(message: NdefMessage): NdefMessage {
         return when (negotiatedHandoverState) {
-            NegotiatedHandoverState.NOT_STARTED -> throw Error("Unexpected message - Negotiated Handover not started")
+            NegotiatedHandoverState.NOT_STARTED -> throw IllegalStateException("Unexpected message - Negotiated Handover not started")
             NegotiatedHandoverState.EXPECT_SERVICE_SELECT -> ndefTransactHandleServiceSelect(message)
             NegotiatedHandoverState.EXPECT_HANDOVER_REQUEST_MESSAGE -> ndefTransactHandleHandoverRequest(message)
-            NegotiatedHandoverState.EXPECT_HANDOVER_SELECT_MESSAGE -> throw Error("Negotiated Handover is complete")
+            NegotiatedHandoverState.EXPECT_HANDOVER_SELECT_MESSAGE -> throw IllegalStateException("Negotiated Handover is complete")
         }
     }
 
@@ -453,7 +453,7 @@ class MdocNfcEngagementHelper(
      *
      * @param reason the reason.
      */
-    suspend fun processDeactivated(reason: Int) {
+    fun processDeactivated(reason: Int) {
         if (raisedHandoverComplete || raisedError) {
             return
         } else {

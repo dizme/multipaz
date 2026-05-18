@@ -43,7 +43,7 @@ class MultiDeviceTestsClient(
             val cmd = receiveChannel.readUTF8Line(LINE_LIMIT)
             Logger.i(TAG, "Received command '$cmd'")
             if (cmd == null) {
-                throw Error("Receive channel was closed")
+                throw IllegalStateException("Receive channel was closed")
             } else if (cmd == "Done") {
                 break
             } else if (cmd.startsWith("TestPresentationPrepare ")) {
@@ -116,7 +116,7 @@ class MultiDeviceTestsClient(
                             Test.MDOC_PERIPHERAL_SERVER_MODE_L2CAP_PSM_IN_DEVICE_ENGAGEMENT -> {
                                 // Expects termination in initial message
                                 if (statusCode != Constants.SESSION_DATA_STATUS_SESSION_TERMINATION) {
-                                    throw Error("Expected status 20, got $statusCode")
+                                    throw IllegalStateException("Expected status 20, got $statusCode")
                                 }
                             }
                             Test.MDOC_CENTRAL_CLIENT_MODE_HOLDER_TERMINATION_MSG,
@@ -124,25 +124,25 @@ class MultiDeviceTestsClient(
                             Test.MDOC_CENTRAL_CLIENT_MODE_L2CAP_HOLDER_TERMINATION_MSG,
                             Test.MDOC_PERIPHERAL_SERVER_MODE_L2CAP_HOLDER_TERMINATION_MSG -> {
                                 if (statusCode != null) {
-                                    throw Error("Expected status to be unset got $statusCode")
+                                    throw IllegalStateException("Expected status to be unset got $statusCode")
                                 }
                                 val (deviceResponse, statusCode) = sessionEncryption.decryptMessage(
                                     transport.waitForMessage()
                                 )
                                 if (deviceResponse != null ||
                                     statusCode != Constants.SESSION_DATA_STATUS_SESSION_TERMINATION) {
-                                    throw Error("Expected empty message and status 20")
+                                    throw IllegalStateException("Expected empty message and status 20")
                                 }
                             }
                             Test.MDOC_CENTRAL_CLIENT_MODE_HOLDER_TERMINATION_BLE,
                             Test.MDOC_PERIPHERAL_SERVER_MODE_HOLDER_TERMINATION_BLE -> {
                                 if (statusCode != null) {
-                                    throw Error("Expected status to be unset got $statusCode")
+                                    throw IllegalStateException("Expected status to be unset got $statusCode")
                                 }
                                 // Expects a termination via BLE
                                 val sessionData = transport.waitForMessage()
                                 if (sessionData.isNotEmpty()) {
-                                    throw Error("Expected transport-specific termination, got non-empty message")
+                                    throw IllegalStateException("Expected transport-specific termination, got non-empty message")
                                 }
                             }
                             Test.MDOC_CENTRAL_CLIENT_MODE_READER_TERMINATION_MSG,
@@ -150,7 +150,7 @@ class MultiDeviceTestsClient(
                             Test.MDOC_CENTRAL_CLIENT_MODE_L2CAP_READER_TERMINATION_MSG,
                             Test.MDOC_PERIPHERAL_SERVER_MODE_L2CAP_READER_TERMINATION_MSG -> {
                                 if (statusCode != null) {
-                                    throw Error("Expected status to be unset got $statusCode")
+                                    throw IllegalStateException("Expected status to be unset got $statusCode")
                                 }
                                 // Expects reader to terminate via message
                                 transport.sendMessage(
@@ -160,7 +160,7 @@ class MultiDeviceTestsClient(
                             Test.MDOC_CENTRAL_CLIENT_MODE_READER_TERMINATION_BLE,
                             Test.MDOC_PERIPHERAL_SERVER_MODE_READER_TERMINATION_BLE -> {
                                 if (statusCode != null) {
-                                    throw Error("Expected status to be unset got $statusCode")
+                                    throw IllegalStateException("Expected status to be unset got $statusCode")
                                 }
                                 // Expects reader to terminate via BLE
                                 transport.sendMessage(byteArrayOf())
@@ -185,7 +185,7 @@ class MultiDeviceTestsClient(
                 }
 
             } else {
-                throw Error("Unknown command $cmd")
+                throw IllegalStateException("Unknown command $cmd")
             }
         }
     }

@@ -257,6 +257,18 @@ private suspend fun parseResponse(
         lines.add(Line("Transfer Protocol", ValueText(metadata.transferProtocol)))
         lines.add(Line("Request size", ValueSize(metadata.requestSize)))
         lines.add(Line("Response size", ValueSize(metadata.responseSize)))
+        metadata.nfcHybridTransportStats?.let { stats ->
+            lines.add(Line("Number of messages sent",
+                ValueText("${stats.numSent} (${stats.numSentViaNfc} on NFC, ${stats.numSentViaTransport} on Transport)")
+            ))
+            lines.add(Line("Number of messages received",
+                ValueText("${stats.numReceived} (${stats.numReceivedFirstOnNfc} first on NFC, " +
+                        "${stats.numReceivedFirstOnTransport} first on Transport)")
+            ))
+            lines.add(Line("NFC disconnected during transaction",
+                ValueText("${stats.nfcDisconnectedDuringTransaction}")
+            ))
+        }
         lines.add(Line("Tap to engagement received", ValueDuration(
             metadata.durationMsecNfcTapToEngagement?.toDuration(DurationUnit.MILLISECONDS)
         )))

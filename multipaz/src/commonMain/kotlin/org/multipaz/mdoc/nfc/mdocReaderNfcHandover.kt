@@ -18,14 +18,38 @@ import org.multipaz.nfc.TnepStatusRecord
 import org.multipaz.util.Logger
 import org.multipaz.util.UUID
 import kotlinx.io.bytestring.ByteString
+import kotlinx.io.bytestring.ByteStringBuilder
+import kotlinx.io.bytestring.append
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.encodeToByteString
 import org.multipaz.cbor.buildCborArray
 import org.multipaz.cbor.buildCborMap
+import org.multipaz.cbor.putCborArray
+import org.multipaz.cbor.putCborMap
+import org.multipaz.mdoc.connectionmethod.MdocConnectionMethodNfcV2
+import org.multipaz.mdoc.engagement.DeviceEngagement
 import org.multipaz.mdoc.role.MdocRole
+import org.multipaz.mdoc.transport.encapsulateInDo53
+import org.multipaz.mdoc.transport.extractFromDo53
+import org.multipaz.nfc.CommandApdu
+import org.multipaz.nfc.ResponseApdu
 import org.multipaz.util.getUInt16
+import org.multipaz.util.toHex
+import kotlin.math.min
 
 const private val TAG = "mdocReaderNfcHandover"
+
+/**
+ * The type of handover which occurred.
+ */
+enum class MdocHandoverType {
+    /** Static handover according to ISO/IEC 18013-5:2021 */
+    STATIC_HANDOVER,
+    /** Negotiated handover according to ISO/IEC 18013-5:2021 */
+    NEGOTIATED_HANDOVER,
+    /** Handover according to ISO/IEC 18013-5 Second Edition */
+    V2_HANDOVER
+}
 
 /**
  * The result of a successful NFC handover operation
@@ -33,11 +57,22 @@ const private val TAG = "mdocReaderNfcHandover"
  * @property connectionMethods the possible connection methods for the mdoc reader to connect to.
  * @property encodedDeviceEngagement the bytes of DeviceEngagement.
  * @property handover the handover value.
+ * @property type the type of NFC handover which occurred.
  */
 data class MdocReaderNfcHandoverResult(
     val connectionMethods: List<MdocConnectionMethod>,
     val encodedDeviceEngagement: ByteString,
     val handover: DataItem,
+    val type: MdocHandoverType,
+)
+
+/**
+ * Options for when performing handover as a mdoc reader.
+ *
+ * @property useNfcV2 if `true`, will attempt to use NFCv2 handover from ISO 18013-5 Second Edition.
+ */
+data class MdocReaderNfcHandoverOptions(
+    val useNfcV2: Boolean = false
 )
 
 /**
@@ -46,15 +81,39 @@ data class MdocReaderNfcHandoverResult(
  * @param tag the [NfcIsoTag] representing a NFC connection to the mdoc.
  * @param negotiatedHandoverConnectionMethods the connection methods to offer if the remote mdoc is using NFC
  * negotiated handover.
+ * @param options a [MdocReaderNfcHandoverOptions]
  * @return a [MdocReaderNfcHandoverResult] if the handover was successful or `null` if the tag isn't an NDEF tag.
  * @throws Throwable if an error occurs during handover.
  */
 suspend fun mdocReaderNfcHandover(
     tag: NfcIsoTag,
     negotiatedHandoverConnectionMethods: List<MdocConnectionMethod>,
+    options: MdocReaderNfcHandoverOptions = MdocReaderNfcHandoverOptions()
 ): MdocReaderNfcHandoverResult? {
+    // First try the new engagement method, if requested...
+    if (options.useNfcV2) {
+        val selectApplicationResponse = try {
+            tag.selectApplication(Nfc.MDOC_NFC_ENGAGEMENT_V2_AID)
+        } catch (e: NfcCommandFailedException) {
+            if (e.status == Nfc.RESPONSE_STATUS_ERROR_FILE_OR_APPLICATION_NOT_FOUND) {
+                Logger.i(TAG, "Selecting NFCv2 AID returned FILE_NOT_FOUND")
+            }
+            null
+        }
+        if (selectApplicationResponse != null) {
+            Logger.i(TAG, "Successfully selected NFCv2 AID")
+            Logger.i(TAG, "payload: ${selectApplicationResponse.payload.toByteArray().toHex()}")
+            val payload = Cbor.decode(selectApplicationResponse.payload.toByteArray())
+            val mdocNfcMaxCommandApduSize = payload.get(0).asNumber.toInt()
+            Logger.i(TAG, "mdoc indicates APDU max command length is $mdocNfcMaxCommandApduSize")
+            return mdocReaderNfcV2Handover(tag, mdocNfcMaxCommandApduSize, negotiatedHandoverConnectionMethods)
+        }
+    }
+
+    // Fall back to NDEF...
     try {
         tag.selectApplication(Nfc.NDEF_APPLICATION_ID)
+        Logger.i(TAG, "Successfully selected NDEF AID")
     } catch (e: NfcCommandFailedException) {
         // This is returned by Android when locked phone is being tapped by an mdoc reader. Once unlocked the
         // user will be shown UI to convey another tap should happen. So since we're the mdoc reader, we
@@ -65,6 +124,7 @@ suspend fun mdocReaderNfcHandover(
             return null
         }
     }
+
     tag.selectFile(Nfc.NDEF_CAPABILITY_CONTAINER_FILE_ID)
     // CC file is 15 bytes long
     val ccFile = tag.readBinary(0, 15)
@@ -96,6 +156,7 @@ suspend fun mdocReaderNfcHandover(
             connectionMethods = disambiguatedConnectionMethods,
             encodedDeviceEngagement = ByteString(encodedDeviceEngagement),
             handover = handover,
+            type = MdocHandoverType.STATIC_HANDOVER
         )
     }
 
@@ -150,6 +211,67 @@ suspend fun mdocReaderNfcHandover(
         ),
         encodedDeviceEngagement = ByteString(encodedDeviceEngagement),
         handover = handover,
+        type = MdocHandoverType.NEGOTIATED_HANDOVER
+    )
+}
+
+private suspend fun mdocReaderNfcV2Handover(
+    tag: NfcIsoTag,
+    mdocNfcMaxCommandApduSize: Int,
+    negotiatedHandoverConnectionMethods: List<MdocConnectionMethod>,
+): MdocReaderNfcHandoverResult? {
+    // Send Handover Request message, the resulting NDEF message is Handover Response
+    //
+    val combinedNegotiatedHandoverConnectionMethods = listOf(MdocConnectionMethodNfcV2()) +
+            MdocConnectionMethod.combine(negotiatedHandoverConnectionMethods)
+
+
+    val nfcV2HandoverRequest = buildCborMap {
+        // ReaderEngagement is at key 0
+        putCborMap(0) {
+            // DeviceRetrievalMethods is at key 2
+            putCborArray(2) {
+                for (method in combinedNegotiatedHandoverConnectionMethods) {
+                    val encodedDeviceRetrievalMethod = method.toDeviceEngagement()
+                    add(Cbor.decode(encodedDeviceRetrievalMethod))
+                }
+            }
+        }
+    }
+    val encodedNfcV2HandoverRequest = Cbor.encode(nfcV2HandoverRequest)
+
+    val encodedNfcV2HandoverSelect = tag.nfcV2Transact(
+        message = ByteString(encodedNfcV2HandoverRequest),
+        commandDataFieldMaxLength = tag.maxTransceiveLength,
+        responseDataFieldMaxLength = tag.maxTransceiveLength
+    ).toByteArray()
+
+    Logger.i(TAG, "Handover complete")
+
+    val nfcV2HandoverSelect = Cbor.decode(encodedNfcV2HandoverSelect)
+
+    val deviceEngagementDataItem = nfcV2HandoverSelect.get(0)
+    val encodedDeviceEngagement = Cbor.encode(deviceEngagementDataItem)
+
+    val deviceEngagement = DeviceEngagement.fromDataItem(deviceEngagementDataItem)
+
+    check(deviceEngagement.connectionMethods.size == 1) {
+        "Expected exactly one Device Retrieval methods in engagement, found ${deviceEngagement.connectionMethods.size}"
+    }
+
+    val handover = buildCborArray {
+        add(encodedNfcV2HandoverSelect) // Handover Select message
+        add(encodedNfcV2HandoverRequest)  // Handover Request message
+    }
+
+    return MdocReaderNfcHandoverResult(
+        connectionMethods = MdocConnectionMethod.disambiguate(
+            deviceEngagement.connectionMethods,
+            MdocRole.MDOC_READER
+        ),
+        encodedDeviceEngagement = ByteString(encodedDeviceEngagement),
+        handover = handover,
+        type = MdocHandoverType.V2_HANDOVER
     )
 }
 
@@ -224,10 +346,114 @@ private fun parseHandoverSelectMessage(
         }
     }
     if (!hasHandoverSelectRecord) {
-        throw Error("Handover Select record not found")
+        throw IllegalStateException("Handover Select record not found")
     }
     if (encodedDeviceEngagement == null) {
-        throw Error("DeviceEngagement record not found")
+        throw IllegalStateException("DeviceEngagement record not found")
     }
     return Pair(encodedDeviceEngagement.toByteArray(), connectionMethods)
+}
+
+
+internal suspend fun NfcIsoTag.nfcV2Transact(
+    message: ByteString,
+    commandDataFieldMaxLength: Int,
+    responseDataFieldMaxLength: Int,
+    onMessageSent: (suspend () -> Unit)? = null
+): ByteString {
+    val encMessage = encapsulateInDo53(message)
+
+    val maxChunkSize = commandDataFieldMaxLength
+    val offsets = 0 until encMessage.size step maxChunkSize
+    var lastEnvelopeResponse: ResponseApdu? = null
+    for (offset in offsets) {
+        val moreDataComing = (offset != offsets.last)
+        val size = min(maxChunkSize, encMessage.size - offset)
+        val le = if (!moreDataComing) {
+            responseDataFieldMaxLength
+        } else {
+            0
+        }
+        val response = transceive(
+            CommandApdu(
+                cla = if (moreDataComing) Nfc.CLA_CHAIN_NOT_LAST else Nfc.CLA_CHAIN_LAST,
+                ins = Nfc.INS_ENVELOPE,
+                p1 = 0x00,
+                p2 = 0x00,
+                payload = ByteString(encMessage.toByteArray(), offset, offset + size),
+                le = le
+            )
+        )
+        if (response.status != Nfc.RESPONSE_STATUS_SUCCESS && response.status.and(0xff00) != 0x6100) {
+            throw NfcCommandFailedException("Unexpected ENVELOPE status ${response.statusHexString}", response.status)
+        }
+        lastEnvelopeResponse = response
+    }
+    Logger.i(TAG, "Successfully sent message, waiting for response")
+
+    if (onMessageSent != null) {
+        onMessageSent()
+    }
+
+    check(lastEnvelopeResponse != null)
+    val encapsulatedMessageBuilder = ByteStringBuilder()
+    encapsulatedMessageBuilder.append(lastEnvelopeResponse.payload)
+    if (lastEnvelopeResponse.status == Nfc.RESPONSE_STATUS_SUCCESS) {
+        // Woohoo, entire response fits
+        Logger.i(TAG, "Entire response fits")
+    } else {
+        // More bytes are coming, have to use GET RESPONSE to get the rest
+
+        var leForGetResponse = responseDataFieldMaxLength
+        if (lastEnvelopeResponse.status.and(0xff) != 0) {
+            leForGetResponse = lastEnvelopeResponse.status.and(0xff)
+        }
+        while (true) {
+            Logger.i(TAG, "Sending GET RESPONSE")
+            val response = transceive(
+                CommandApdu(
+                    cla = 0x00,
+                    ins = Nfc.INS_GET_RESPONSE,
+                    p1 = 0x00,
+                    p2 = 0x00,
+                    payload = ByteString(),
+                    le = leForGetResponse
+                )
+            )
+            encapsulatedMessageBuilder.append(response.payload)
+            if (response.status == Nfc.RESPONSE_STATUS_SUCCESS) {
+                /* If Le ≥ the number of available bytes, the mdoc shall include
+                 * all available bytes in the response and set the status words
+                 * to ’90 00’.
+                 */
+                break
+            } else if (response.status == 0x6100) {
+                /* If the number of available bytes > Le + 255, the mdoc shall
+                 * include as many bytes in the response as indicated by Le and
+                 * shall set the status words to ’61 00’. The mdoc reader shall
+                 * respond with a GET RESPONSE command where Le is set to the
+                 * maximum length of the response data field that is supported
+                 * by both the mdoc and the mdoc reader.
+                 */
+                leForGetResponse = responseDataFieldMaxLength
+            } else if (response.status.and(0xff00) == 0x6100) {
+                /* If Le < the number of available bytes ≤ Le + 255, the
+                 * mdoc shall include as many bytes in the response as
+                 * indicated by Le and shall set the status words to ’61 XX’,
+                 * where XX is the number of available bytes remaining. The
+                 * mdoc reader shall respond with a GET RESPONSE command where
+                 * Le is set to XX.
+                 */
+                leForGetResponse = response.status.and(0xff)
+            } else {
+                throw NfcCommandFailedException(
+                    "Unexpected GET RESPONSE status ${response.statusHexString}",
+                    response.status
+                )
+            }
+        }
+    }
+    val encapsulatedMessage = encapsulatedMessageBuilder.toByteString()
+    val extractedMessage = extractFromDo53(encapsulatedMessage)
+    return extractedMessage
 }

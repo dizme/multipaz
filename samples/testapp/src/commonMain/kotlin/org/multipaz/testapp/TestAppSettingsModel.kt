@@ -171,6 +171,8 @@ class TestAppSettingsModel private constructor(
         bind(observeModeEmitPollingFramesAsReader, "observeModeEmitPollingFramesAsReader", false)
 
         bind(currentlyFocusedDocumentId, "currentlyFocusedDocumentId", "")
+
+        bind(signRequest, "signRequest", true)
     }
 
     val presentmentBleCentralClientModeEnabled = MutableStateFlow<Boolean>(false)
@@ -201,6 +203,7 @@ class TestAppSettingsModel private constructor(
     val observeModeEnabled = MutableStateFlow<Boolean>(false)
     val observeModeEmitPollingFramesAsReader = MutableStateFlow<Boolean>(false)
     val currentlyFocusedDocumentId = MutableStateFlow<String>("")
+    val signRequest = MutableStateFlow<Boolean>(true)
 }
 
 // Default to our open CSA, where "open" means it'll work with even unlocked bootloaders

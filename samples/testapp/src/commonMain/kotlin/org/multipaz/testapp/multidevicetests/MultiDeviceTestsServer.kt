@@ -250,7 +250,7 @@ class MultiDeviceTestsServer(
                         )
                         val (deviceRequest, statusCode) = sessionEncryption.decryptMessage(transport.waitForMessage())
                         if (deviceRequest != null || statusCode != Constants.SESSION_DATA_STATUS_SESSION_TERMINATION) {
-                            throw Error("Expected empty message and status 20")
+                            throw IllegalStateException("Expected empty message and status 20")
                         }
                     }
                     Test.MDOC_CENTRAL_CLIENT_MODE_READER_TERMINATION_BLE,
@@ -264,7 +264,7 @@ class MultiDeviceTestsServer(
                         )
                         val sessionData = transport.waitForMessage()
                         if (sessionData.isNotEmpty()) {
-                            throw Error("Expected transport-specific termination, got non-empty message")
+                            throw IllegalStateException("Expected transport-specific termination, got non-empty message")
                         }
                     }
                 }
@@ -296,7 +296,7 @@ class MultiDeviceTestsServer(
         } else if (response == "TestPresentationFailed") {
             numReaderErrors += 1
         } else {
-            throw Error("Unexpected TestPresentation response '$response'")
+            throw IllegalStateException("Unexpected TestPresentation response '$response'")
         }
 
         if (holderScanningTimeMsec > 0 && readerScanningTimeMsec > 0) {

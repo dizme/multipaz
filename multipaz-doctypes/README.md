@@ -24,18 +24,18 @@ The `multipaz-doctypes` module provides:
 
 - **Driving License** (ISO mDL)
 - **EU Personal ID**
-- **German Personal ID**
 - **Photo ID**
 - **Vehicle Registration**
 - **Vaccination Document**
-- **Digital Payment Credential**
 - **Age Verification**
-- **Certificate of Residence**
 - **Google Wallet ID Pass**
-- **Movie Ticket** (Utopia)
-- **Boarding Pass** (Utopia)
-- **Loyalty Card**
-- **Naturalization Certificate** (Utopia)
+- **Aadhaar**
+
+> Note: Multipaz-Utopia-specific document types (Movie Ticket, Boarding Pass,
+> Naturalization Certificate, German Personal ID, Certificate of Residence,
+> Digital Payment Credential, Loyalty Card) and their localized strings live
+> in the [`multipaz-utopia`](../multipaz-utopia) module. Applications that
+> only need standardized document types do not pull in those resources.
 
 ## Architecture
 
@@ -83,7 +83,7 @@ import org.multipaz.cbor.toDataItem
 import org.multipaz.documenttype.DocumentAttributeType
 import org.multipaz.documenttype.DocumentType
 import org.multipaz.documenttype.Icon
-import org.multipaz.doctypes.generated.GeneratedStringKeys
+import org.multipaz.doctypes.localization.GeneratedStringKeys
 import org.multipaz.doctypes.localization.LocalizedStrings
 
 object MyNewDocument {

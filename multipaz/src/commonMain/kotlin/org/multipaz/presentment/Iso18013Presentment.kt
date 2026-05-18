@@ -79,7 +79,7 @@ suspend fun Iso18013Presentment(
                 it == MdocTransport.State.CLOSED
     }
     if (transport.state.value != MdocTransport.State.CONNECTED) {
-        throw Error("Expected state CONNECTED but found ${transport.state.value}")
+        throw IllegalStateException("Expected state CONNECTED but found ${transport.state.value}")
     }
     //Logger.iCbor(TAG, "DeviceEngagement", mechanism.encodedDeviceEngagement.toByteArray())
     var numRequestsServed = 0

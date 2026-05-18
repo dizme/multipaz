@@ -1,21 +1,20 @@
 package org.multipaz.mdoc.nfc
 
 import kotlinx.coroutines.Dispatchers
-import org.multipaz.cbor.DataItem
 import org.multipaz.mdoc.connectionmethod.MdocConnectionMethod
+import org.multipaz.mdoc.connectionmethod.MdocConnectionMethodNfcV2
 import org.multipaz.mdoc.transport.MdocTransport
 import org.multipaz.mdoc.transport.MdocTransportFactory
 import org.multipaz.mdoc.transport.MdocTransportOptions
 import org.multipaz.mdoc.transport.NfcTransportMdocReader
 import org.multipaz.prompt.PromptDismissedException
 import org.multipaz.util.Logger
-import kotlinx.io.bytestring.ByteString
 import org.multipaz.mdoc.role.MdocRole
 import org.multipaz.nfc.NfcScanOptions
 import org.multipaz.nfc.NfcTagReader
+import org.multipaz.mdoc.transport.NfcHybridTransportMdocReader
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Clock
-import kotlin.time.Duration
 
 private const val TAG = "scanMdocReader"
 
@@ -30,6 +29,7 @@ private const val TAG = "scanMdocReader"
  *   platforms supports not showing a dialog, use [org.multipaz.nfc.nfcTagScanningSupportedWithoutDialog] to check at
  *   runtime if the platform supports this.
  * @param options the [MdocTransportOptions] used to create new [MdocTransport] instances.
+ * @param handoverOptions the [MdocReaderNfcHandoverOptions] used to control handover behavior.
  * @param transportFactory the factory used to create [MdocTransport] instances.
  * @param selectConnectionMethod used to choose a connection method if the remote mdoc is using NFC static handover.
  * @param negotiatedHandoverConnectionMethods the connection methods to offer if the remote mdoc is using NFC
@@ -41,6 +41,7 @@ private const val TAG = "scanMdocReader"
 suspend fun NfcTagReader.scanMdocReader(
     message: String?,
     options: MdocTransportOptions,
+    handoverOptions: MdocReaderNfcHandoverOptions,
     transportFactory: MdocTransportFactory = MdocTransportFactory.Default,
     selectConnectionMethod: suspend (connectionMethods: List<MdocConnectionMethod>) -> MdocConnectionMethod?,
     negotiatedHandoverConnectionMethods: List<MdocConnectionMethod>,
@@ -72,6 +73,7 @@ suspend fun NfcTagReader.scanMdocReader(
                 val handoverResult = mdocReaderNfcHandover(
                     tag = tag,
                     negotiatedHandoverConnectionMethods = negotiatedHandoverTransports.map { it.connectionMethod },
+                    options = handoverOptions
                 )
                 if (handoverResult == null) {
                     return@tagInteractionFunc null
@@ -99,25 +101,42 @@ suspend fun NfcTagReader.scanMdocReader(
                 }
                 transportsToClose.clear()
                 if (transport == null) {
-                    transport = transportFactory.createTransport(
-                        connectionMethod,
-                        MdocRole.MDOC_READER,
-                        options
+                    // For NFCv2, it's possible the mdoc only supports NFC in which case there is
+                    // no transport to create
+                    if (connectionMethod !is MdocConnectionMethodNfcV2) {
+                        transport = transportFactory.createTransport(
+                            connectionMethod,
+                            MdocRole.MDOC_READER,
+                            options
+                        )
+                    }
+                }
+
+                if (handoverResult.type == MdocHandoverType.V2_HANDOVER) {
+                    ScanMdocReaderResult(
+                        transport = NfcHybridTransportMdocReader(
+                            nfcTag = tag,
+                            negotiatedTransport = transport
+                        ),
+                        encodedDeviceEngagement = handoverResult.encodedDeviceEngagement,
+                        handover = handoverResult.handover,
+                        type = handoverResult.type,
+                        processingDuration = Clock.System.now() - t0
+                    )
+                } else {
+                    if (transport is NfcTransportMdocReader) {
+                        transport.setTag(tag)
+                    } else {
+                        tag.close()
+                    }
+                    ScanMdocReaderResult(
+                        transport = transport!!,
+                        encodedDeviceEngagement = handoverResult.encodedDeviceEngagement,
+                        handover = handoverResult.handover,
+                        type = handoverResult.type,
+                        processingDuration = Clock.System.now() - t0
                     )
                 }
-
-                if (transport is NfcTransportMdocReader) {
-                    transport.setTag(tag)
-                } else {
-                    tag.close()
-                }
-
-                ScanMdocReaderResult(
-                    transport = transport,
-                    encodedDeviceEngagement = handoverResult.encodedDeviceEngagement,
-                    handover = handoverResult.handover,
-                    processingDuration = Clock.System.now() - t0
-                )
             },
             options = nfcScanOptions,
             context = context

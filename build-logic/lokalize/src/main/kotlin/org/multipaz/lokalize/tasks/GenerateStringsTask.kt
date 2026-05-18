@@ -36,6 +36,9 @@ abstract class GenerateStringsTask : DefaultTask() {
     abstract val packageName: Property<String>
 
     @get:Input
+    abstract val stringKeysPackageName: Property<String>
+
+    @get:Input
     abstract val generatedClassName: Property<String>
 
     @get:Input
@@ -254,7 +257,7 @@ abstract class GenerateStringsTask : DefaultTask() {
         }
 
         val content = buildString {
-            appendLine("package org.multipaz.doctypes.localization")
+            appendLine("package ${stringKeysPackageName.get()}")
             appendLine()
             appendLine("/**")
             appendLine(" * Generated string resource keys from values/strings.json.")

@@ -5,8 +5,8 @@ import org.multipaz.cbor.toDataItemDateTimeString
 import org.multipaz.documenttype.DocumentAttributeType
 import org.multipaz.documenttype.DocumentType
 import org.multipaz.documenttype.Icon
-import org.multipaz.doctypes.localization.LocalizedStrings
-import org.multipaz.doctypes.localization.GeneratedStringKeys
+import org.multipaz.utopia.localization.LocalizedStrings
+import org.multipaz.utopia.localization.GeneratedStringKeys
 import kotlin.time.Clock
 
 /**

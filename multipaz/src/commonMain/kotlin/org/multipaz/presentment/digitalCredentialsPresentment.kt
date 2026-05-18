@@ -141,7 +141,7 @@ suspend fun digitalCredentialsPresentment(
             )
         }
         else -> {
-            throw Error("Protocol $protocol is not supported")
+            throw IllegalStateException("Protocol $protocol is not supported")
         }
     }
 }

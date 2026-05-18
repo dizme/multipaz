@@ -185,7 +185,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     resumeWait()
                 } else {
-                    resumeWaitWithException(Error("onServiceAdded: Expected GATT_SUCCESS got $status"))
+                    resumeWaitWithException(IllegalStateException("onServiceAdded: Expected GATT_SUCCESS got $status"))
                 }
             } else {
                 Logger.w(TAG, "onServiceAdded but not waiting")
@@ -204,7 +204,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
                     "$offset ${characteristic.uuid}")
             if (characteristic == identCharacteristic) {
                 if (identValue == null) {
-                    onError(Error("Received request for ident before it's set.."))
+                    onError(IllegalStateException("Received request for ident before it's set.."))
                 } else {
                     gattServer!!.sendResponse(
                         device,
@@ -293,7 +293,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
                     handleIncomingData(value)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    onError(Error("Error processing incoming data", e))
+                    onError(IllegalStateException("Error processing incoming data", e))
                 }
             }
         }
@@ -330,7 +330,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
             Logger.d(TAG, "onNotificationSent $status for ${device.address}")
             if (waitFor?.state == WaitState.CHARACTERISTIC_WRITE_COMPLETED) {
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    resumeWaitWithException(Error("onNotificationSent: Expected GATT_SUCCESS but got $status"))
+                    resumeWaitWithException(IllegalStateException("onNotificationSent: Expected GATT_SUCCESS but got $status"))
                 } else {
                     resumeWait()
                 }
@@ -351,7 +351,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
 
         override fun onStartFailure(errorCode: Int) {
             if (waitFor?.state == WaitState.START_ADVERTISING) {
-                resumeWaitWithException(Error("Started advertising failed with $errorCode"))
+                resumeWaitWithException(IllegalStateException("Started advertising failed with $errorCode"))
             } else {
                 Logger.w(TAG, "Unexpected AdvertiseCallback.onStartFailure() callback")
             }
@@ -362,7 +362,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
 
     private fun handleIncomingData(chunk: ByteArray) {
         if (chunk.size < 1) {
-            throw Error("Invalid data length ${chunk.size} for Client2Server characteristic")
+            throw IllegalStateException("Invalid data length ${chunk.size} for Client2Server characteristic")
         }
         incomingMessage.append(chunk, 1, chunk.size)
         when {
@@ -383,7 +383,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
             }
 
             else -> {
-                throw Error("Invalid first byte ${chunk[0]} in Client2Server data chunk, " +
+                throw IllegalStateException("Invalid first byte ${chunk[0]} in Client2Server data chunk, " +
                         "expected 0 or 1")
             }
         }
@@ -475,7 +475,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
 
         advertiser = bluetoothManager.adapter.bluetoothLeAdvertiser
         if (advertiser == null) {
-            throw Error("Advertiser not available, is Bluetooth off?")
+            throw IllegalStateException("Advertiser not available, is Bluetooth off?")
         }
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
@@ -543,7 +543,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
                     false,
                     value)
                 if (rc != BluetoothStatusCodes.SUCCESS) {
-                    throw Error("Error notifyCharacteristicChanged on characteristic ${characteristic.uuid} rc=$rc")
+                    throw IllegalStateException("Error notifyCharacteristicChanged on characteristic ${characteristic.uuid} rc=$rc")
                 }
             } else {
                 @Suppress("DEPRECATION")
@@ -554,7 +554,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
                         characteristic,
                         false)
                 ) {
-                    throw Error("Error notifyCharacteristicChanged on characteristic ${characteristic.uuid}")
+                    throw IllegalStateException("Error notifyCharacteristicChanged on characteristic ${characteristic.uuid}")
                 }
             }
         }
@@ -641,7 +641,7 @@ internal class BlePeripheralManagerAndroid: BlePeripheralManager {
             if (l2capNotUsed) {
                 Logger.d(TAG, "Ignoring error since l2capNotUsed is true", e)
             } else {
-                onError(Error("Accepting/reading from L2CAP socket failed", e))
+                onError(IllegalStateException("Accepting/reading from L2CAP socket failed", e))
             }
         }
     }

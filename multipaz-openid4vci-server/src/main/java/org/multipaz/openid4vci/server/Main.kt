@@ -2,6 +2,7 @@ package org.multipaz.openid4vci.server
 
 import org.multipaz.openid4vci.credential.CredentialFactoryAgeVerification
 import org.multipaz.openid4vci.credential.CredentialFactoryDigitalPaymentCredential
+import org.multipaz.openid4vci.credential.CredentialFactoryDigitalPaymentCredentialSdJwt
 import org.multipaz.openid4vci.credential.CredentialFactoryMdl
 import org.multipaz.openid4vci.credential.CredentialFactoryMdocPid
 import org.multipaz.openid4vci.credential.CredentialFactoryRegistry
@@ -46,6 +47,7 @@ class Main {
                             CredentialFactoryAgeVerification(),
                             CredentialFactoryUtopiaLoyalty(),
                             CredentialFactoryDigitalPaymentCredential(),
+                            CredentialFactoryDigitalPaymentCredentialSdJwt(),
                         )
                     )
                     credentialFactoryRegistry.initialize()

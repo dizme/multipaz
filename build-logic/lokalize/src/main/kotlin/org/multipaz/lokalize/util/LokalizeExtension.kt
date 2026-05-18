@@ -47,4 +47,19 @@ val resourcesDir: Property<String> = objects.property(String::class.java)
  */
 val outputFormat: Property<OutputFormat> = objects.property(OutputFormat::class.java)
 .apply { set(OutputFormat.XML) }
+
+/**
+ * Package name used for the generated translations access object
+ * (`GeneratedTranslations.kt` and per-language `Strings_*.kt` files).
+ *
+ * Default: `org.multipaz.doctypes.generated`
+ */
+val generatedTranslationsPackageName: Property<String> = objects.property(String::class.java)
+
+/**
+ * Package name used for the generated `GeneratedStringKeys` object.
+ *
+ * Default: `org.multipaz.doctypes.localization`
+ */
+val stringKeysPackageName: Property<String> = objects.property(String::class.java)
 }

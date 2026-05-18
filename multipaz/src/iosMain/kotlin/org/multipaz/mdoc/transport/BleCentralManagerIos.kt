@@ -241,14 +241,14 @@ internal class BleCentralManagerIos : BleCentralManager {
         override fun peripheral(peripheral: CBPeripheral, didModifyServices: List<*>) {
             val invalidatedServices = didModifyServices
             Logger.d(TAG, "peripheral:didModifyServices invalidatedServices=${invalidatedServices}")
-            onError(Error("Remote service vanished"))
+            onError(IllegalStateException("Remote service vanished"))
         }
 
         override fun peripheral(peripheral: CBPeripheral, didOpenL2CAPChannel: CBL2CAPChannel?, error: NSError?) {
             Logger.d(TAG, "peripheralDidOpenL2CAPChannel")
             if (waitFor?.state == WaitState.OPEN_L2CAP_CHANNEL) {
                 if (error != null) {
-                    resumeWaitWithException(Error("peripheralDidOpenL2CAPChannel failed", error.toKotlinError()))
+                    resumeWaitWithException(IllegalStateException("peripheralDidOpenL2CAPChannel failed", error.toKotlinError()))
                 } else {
                     this@BleCentralManagerIos.l2capChannel = didOpenL2CAPChannel
                     resumeWait()
@@ -274,7 +274,7 @@ internal class BleCentralManagerIos : BleCentralManager {
                 CBCharacteristicWriteWithoutResponse
             )
             if (peripheral!!.canSendWriteWithoutResponse) {
-                throw Error("canSendWriteWithoutResponse is true right after writing value")
+                throw IllegalStateException("canSendWriteWithoutResponse is true right after writing value")
             }
         }
     }
@@ -286,7 +286,7 @@ internal class BleCentralManagerIos : BleCentralManager {
 
     private fun handleIncomingData(chunk: ByteArray) {
         if (chunk.size < 1) {
-            throw Error("Invalid data length ${chunk.size} for Server2Client characteristic")
+            throw IllegalStateException("Invalid data length ${chunk.size} for Server2Client characteristic")
         }
         incomingMessage.append(chunk, 1, chunk.size)
         when {
@@ -310,7 +310,7 @@ internal class BleCentralManagerIos : BleCentralManager {
             }
 
             else -> {
-                throw Error(
+                throw IllegalStateException(
                     "Invalid first byte ${chunk[0]} in Server2Client data chunk, " +
                             "expected 0 or 1"
                 )
@@ -330,7 +330,7 @@ internal class BleCentralManagerIos : BleCentralManager {
                 if (centralManager.state == CBCentralManagerStatePoweredOn) {
                     resumeWait()
                 } else {
-                    resumeWaitWithException(Error("Excepted poweredOn, got ${centralManager.state}"))
+                    resumeWaitWithException(IllegalStateException("Excepted poweredOn, got ${centralManager.state}"))
                 }
             } else {
                 Logger.w(TAG, "CBCentralManagerDelegate didUpdateState callback but not waiting")
@@ -380,7 +380,7 @@ internal class BleCentralManagerIos : BleCentralManager {
         ) {
             Logger.d(TAG, "didDisconnectPeripheral: peripheral=$didDisconnectPeripheral timestamp=${timestamp} " +
                     "isReconnecting=$isReconnecting error=${error?.toKotlinError()}")
-            onError(Error("Peripheral unexpectedly disconnected"))
+            onError(IllegalStateException("Peripheral unexpectedly disconnected"))
         }
     }
 
@@ -533,7 +533,7 @@ internal class BleCentralManagerIos : BleCentralManager {
         val identValue = identCharacteristic!!.value!!.toByteArray()
         if (!(expectedIdentValue contentEquals identValue)) {
             close()
-            throw Error(
+            throw IllegalStateException(
                 "Ident doesn't match, expected ${expectedIdentValue.toHex()} " +
                         " got ${identValue.toHex()}"
             )
@@ -634,7 +634,7 @@ internal class BleCentralManagerIos : BleCentralManager {
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            onError(Error("Reading from L2CAP channel failed", e))
+            onError(IllegalStateException("Reading from L2CAP channel failed", e))
         }
     }
 

@@ -72,6 +72,8 @@ class LokalizePlugin : Plugin<Project> {
         ext.llModel.convention(LLmModel.GEMINI2_0_FLASH)
         ext.resourcesDir.convention("src/commonMain/composeResources")
         ext.outputFormat.convention(org.multipaz.lokalize.util.OutputFormat.XML)
+        ext.generatedTranslationsPackageName.convention("org.multipaz.doctypes.generated")
+        ext.stringKeysPackageName.convention("org.multipaz.doctypes.localization")
 
         // Register check task - validates translations
         target.tasks.register("lokalizeCheck", LokalizeCheckTask::class.java) { task ->
@@ -127,7 +129,8 @@ class LokalizePlugin : Plugin<Project> {
 
             task.defaultLocale.convention(ext.defaultLocale)
             task.outputFormat.convention(ext.outputFormat)
-            task.packageName.convention("org.multipaz.doctypes.generated")
+            task.packageName.convention(ext.generatedTranslationsPackageName)
+            task.stringKeysPackageName.convention(ext.stringKeysPackageName)
             task.generatedClassName.convention("GeneratedTranslations")
 
             task.resourcesDir.convention(
@@ -135,7 +138,11 @@ class LokalizePlugin : Plugin<Project> {
             )
 
             task.outputDir.convention(
-                target.layout.buildDirectory.dir("generated/kmp/kotlin/org/multipaz/doctypes/generated")
+                target.layout.buildDirectory.dir(
+                    ext.generatedTranslationsPackageName.map { pkg ->
+                        "generated/kmp/kotlin/${pkg.replace('.', '/')}"
+                    }
+                )
             )
 
             // Configure source directory EARLY (during configuration phase, not afterEvaluate)
