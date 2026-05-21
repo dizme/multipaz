@@ -136,19 +136,6 @@ std::unique_ptr<MdocRequest> MdocRequest::parseMdocApi(const std::string& protoc
         std::vector<DcqlRequestedClaim> dcqlClaims;
         int claimCounter = 0;
 
-        auto registerClaim = [&](const std::string& ns, const std::string& elem, bool intent) -> std::string {
-            std::string key = ns + "/" + elem;
-            if (claimIdRegistry.find(key) != claimIdRegistry.end()) {
-                return claimIdRegistry[key];
-            }
-            std::string id = "claim" + std::to_string(claimCounter++);
-            std::vector<std::string> path = {ns, elem};
-
-            dcqlClaims.push_back(DcqlRequestedClaim{id, {}, path, intent});
-            claimIdRegistry[key] = id;
-            return id;
-        };
-
         // --- Handle AlternativeDataElements (DocRequestInfo) ---
         std::vector<std::vector<std::vector<std::string>>> logicalRequirements;
 
@@ -158,6 +145,8 @@ std::unique_ptr<MdocRequest> MdocRequest::parseMdocApi(const std::string& protoc
 
         // Check for requestInfo / alternativeDataElements
         cppbor::Array* altDataElementsArray = nullptr;
+        std::string docFormat = "mso_mdoc";
+        std::map<std::string, std::vector<std::string>> dataElementIdentifierMapping;
 
         const auto& requestInfoItem = itemsRequestMap->get("requestInfo");
         if (requestInfoItem) {
@@ -165,8 +154,59 @@ std::unique_ptr<MdocRequest> MdocRequest::parseMdocApi(const std::string& protoc
             if (riMap) {
                 const auto& altItem = riMap->get("alternativeDataElements");
                 if (altItem) altDataElementsArray = altItem->asArray();
+
+                const auto& docFormatItem = riMap->get("docFormat");
+                if (docFormatItem && docFormatItem->asTstr()) {
+                    docFormat = docFormatItem->asTstr()->value();
+                }
+
+                const auto& deimItem = riMap->get("dataElementIdentifierMapping");
+                if (deimItem && deimItem->asMap()) {
+                    auto deimMap = deimItem->asMap();
+                    for (auto it = deimMap->begin(); it != deimMap->end(); ++it) {
+                        std::string deName = it->first->asTstr()->value();
+                        auto pathArray = it->second->asArray();
+                        if (pathArray) {
+                            std::vector<std::string> path;
+                            for (size_t k = 0; k < pathArray->size(); ++k) {
+                                const auto& pElem = pathArray->get(k);
+                                if (pElem->asTstr()) {
+                                    path.push_back(pElem->asTstr()->value());
+                                } else if (pElem->asUint()) {
+                                    path.push_back(std::to_string(pElem->asUint()->value()));
+                                } else if (pElem->asInt()) {
+                                    path.push_back(std::to_string(pElem->asInt()->value()));
+                                }
+                            }
+                            dataElementIdentifierMapping[deName] = path;
+                        }
+                    }
+                }
             }
         }
+
+        auto registerClaim = [&](const std::string& ns, const std::string& elem, bool intent) -> std::string {
+            std::string key = ns + "/" + elem;
+            if (claimIdRegistry.find(key) != claimIdRegistry.end()) {
+                return claimIdRegistry[key];
+            }
+            std::string id = "claim" + std::to_string(claimCounter++);
+            std::vector<std::string> path;
+            if (ns == "_") {
+                if (dataElementIdentifierMapping.count(elem) > 0) {
+                    path = dataElementIdentifierMapping[elem];
+                } else {
+                    LOG("Warning: No mapping for element %s in namespace _", elem.c_str());
+                    path = {ns, elem};
+                }
+            } else {
+                path = {ns, elem};
+            }
+
+            dcqlClaims.push_back(DcqlRequestedClaim{id, {}, path, intent});
+            claimIdRegistry[key] = id;
+            return id;
+        };
 
         for (auto nsIt = nameSpacesMap->begin(); nsIt != nameSpacesMap->end(); ++nsIt) {
             std::string nsName = nsIt->first->asTstr()->value();
@@ -297,11 +337,22 @@ std::unique_ptr<MdocRequest> MdocRequest::parseMdocApi(const std::string& protoc
             }
         }
 
+        std::string format = "mso_mdoc";
+        std::string mdocDocType = "";
+        std::vector<std::string> vctValues;
+
+        if (docFormat == "sd-jwt+kb") {
+            format = "dc+sd-jwt";
+            vctValues.push_back(docType);
+        } else {
+            mdocDocType = docType;
+        }
+
         credentialQueries.push_back(DcqlCredentialQuery(
                 credId,
-                "mso_mdoc",
-                docType,
-                {}, // vctValues
+                format,
+                mdocDocType,
+                vctValues,
                 dcqlClaims,
                 claimSets
         ));

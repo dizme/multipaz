@@ -2057,4 +2057,141 @@ class MatcherTest {
             matcherResult
         )
     }
+
+    @Test
+    fun testMatcher_Iso18013_sdjwt_simple() = runTest {
+        val matcherResult = testMatcherIso18013(
+            signRequest = true,
+            harnessInitializer = { harness -> harness.provisionStandardDocuments() },
+            dcql =
+            """
+                    {
+                      "credentials": [
+                        {
+                          "id": "pid",
+                          "format": "dc+sd-jwt",
+                          "meta": {
+                            "vct_values": [
+                              "urn:eudi:pid:1"
+                            ]
+                          },
+                          "claims": [
+                            {
+                              "path": [
+                                "age_equal_or_over",
+                                "18"
+                              ]
+                            },
+                            {
+                              "path": [
+                                "picture"
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                """.trimIndent().trim(),
+        )
+        Assert.assertEquals(
+            """
+                Set
+                  set_id 0 org-iso-mdoc
+                  SetEntry set_index 0
+                    cred_id 0 org-iso-mdoc __EU PID__
+                    Older than 18: true
+                    Photo of holder: Image (5318 bytes)
+                  SetEntry set_index 0
+                    cred_id 0 org-iso-mdoc __EU PID 2__
+                    Older than 18: true
+                    Photo of holder: Image (5318 bytes)
+            """.trimIndent().trim() + "\n",
+            matcherResult
+        )
+    }
+
+    @Test
+    fun testMatcher_Iso18013_mDL_and_sdjwt() = runTest {
+        val matcherResult = testMatcherIso18013(
+            signRequest = true,
+            harnessInitializer = { harness -> harness.provisionStandardDocuments() },
+            dcql =
+            """
+                    {
+                      "credentials": [
+                        {
+                          "id": "mdl",
+                          "format": "mso_mdoc",
+                          "meta": {
+                            "doctype_value": "org.iso.18013.5.1.mDL"
+                          },
+                          "claims": [
+                            {
+                              "path": [
+                                "org.iso.18013.5.1",
+                                "given_name"
+                              ]
+                            },
+                            {
+                              "path": [
+                                "org.iso.18013.5.1",
+                                "family_name"
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "id": "pid",
+                          "format": "dc+sd-jwt",
+                          "meta": {
+                            "vct_values": [
+                              "urn:eudi:pid:1"
+                            ]
+                          },
+                          "claims": [
+                            {
+                              "path": [
+                                "family_name"
+                              ]
+                            },
+                            {
+                              "path": [
+                                "given_name"
+                              ]
+                            }
+                          ]
+                        }
+                      ],
+                      "credential_sets": [
+                        {
+                          "options": [
+                            [
+                              "mdl", "pid"
+                            ]
+                          ]
+                        }
+                      ]
+                    }
+                """.trimIndent().trim(),
+        )
+        Assert.assertEquals(
+            """
+                Set
+                  set_id 0 org-iso-mdoc
+                  SetEntry set_index 0
+                    cred_id 0 org-iso-mdoc __mDL__
+                    Given names: Erika
+                    Family name: Mustermann
+                  SetEntry set_index 1
+                    cred_id 0 org-iso-mdoc __EU PID__
+                    Family name: Mustermann
+                    Given names: Erika
+                  SetEntry set_index 1
+                    cred_id 0 org-iso-mdoc __EU PID 2__
+                    Family name: Mustermann
+                    Given names: Max
+            """.trimIndent().trim() + "\n",
+            matcherResult
+        )
+    }
 }

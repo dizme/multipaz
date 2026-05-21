@@ -922,34 +922,6 @@ function updateProtocolOptions(mdocOrVc) {
     const protocolDropdown = document.getElementById('protocolDropdown')
     const mdocOnly = document.querySelectorAll('.mdoc-only');
 
-    if (mdocOrVc === 'mdoc' || mdocOrVc === 'rawDcql' || mdocOrVc == 'multiDocument') {
-        // Enable mdoc-only options for mdoc entries
-        mdocOnly.forEach(option => {
-            option.classList.remove('disabled');
-            option.removeAttribute('disabled');
-            // If the preferred protocol was just reenabled, set it as the selected protocol.
-            if (preferredProtocol == option.getAttribute('value')) {
-                selectedProtocol = preferredProtocol
-                protocolDropdown.innerHTML = option.innerHTML;
-            }
-        });
-    } else {
-        // Disable mdoc-only options for non-mdoc entries
-        mdocOnly.forEach(option => {
-            option.classList.add('disabled');
-            option.setAttribute('disabled', 'disabled');
-            if (selectedProtocol == option.getAttribute('value')) {
-                selectedProtocol = null
-            }
-        });
-        // If the selected protocol was disabled, select the next non-disabled protocol.
-        if (selectedProtocol == null) {
-            const firstEnabledOption = document.querySelector('.dropdown-item:not(.disabled)');
-            selectedProtocol = firstEnabledOption.getAttribute('value');
-            protocolDropdown.innerHTML = firstEnabledOption.innerHTML;
-        }
-    }
-
     const openid4vp_sign_request_checkbox = document.getElementById("openid4vp-sign-request")
     openid4vp_sign_request_checkbox.hidden = (
         selectedProtocol !== 'w3c_dc_openid4vp_24' &&

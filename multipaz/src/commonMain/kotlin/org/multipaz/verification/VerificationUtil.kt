@@ -3,6 +3,7 @@ package org.multipaz.verification
 import kotlinx.io.bytestring.ByteString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -19,6 +20,7 @@ import org.multipaz.cbor.Bstr
 import org.multipaz.cbor.Cbor
 import org.multipaz.cbor.DataItem
 import org.multipaz.cbor.Simple
+import org.multipaz.cbor.Tagged
 import org.multipaz.cbor.Tstr
 import org.multipaz.cbor.addCborArray
 import org.multipaz.cbor.addCborMap
@@ -51,6 +53,7 @@ import org.multipaz.sdjwt.SdJwt
 import org.multipaz.sdjwt.SdJwtKb
 import org.multipaz.util.Logger
 import org.multipaz.util.fromBase64Url
+import org.multipaz.util.inflate
 import org.multipaz.util.toBase64Url
 import kotlin.collections.component1
 import kotlin.collections.component2
@@ -112,6 +115,8 @@ object VerificationUtil {
                 exchangeProtocol = exchangeProtocol,
                 docType = docType,
                 claims = claims,
+                docFormat = null,
+                dataElementIdentifierMapping = emptyMap(),
                 nonce = nonce,
                 origin = origin,
                 clientId = clientId,
@@ -290,6 +295,8 @@ object VerificationUtil {
         exchangeProtocol: String,
         docType: String,
         claims: List<MdocRequestedClaim>,
+        docFormat: String?,
+        dataElementIdentifierMapping: Map<String, JsonArray>,
         nonce: ByteString,
         origin: String,
         clientId: String?,
@@ -382,7 +389,9 @@ object VerificationUtil {
                             docType = docType,
                             nameSpaces = itemsToRequest,
                             docRequestInfo = DocRequestInfo(
-                                zkRequest = zkRequest
+                                zkRequest = zkRequest,
+                                docFormat = docFormat,
+                                dataElementIdentifierMapping = dataElementIdentifierMapping,
                             ),
                             readerKey = readerAuthenticationKey,
                         )
@@ -392,7 +401,9 @@ object VerificationUtil {
                             docType = docType,
                             nameSpaces = itemsToRequest,
                             docRequestInfo = DocRequestInfo(
-                                zkRequest = zkRequest
+                                zkRequest = zkRequest,
+                                docFormat = docFormat,
+                                dataElementIdentifierMapping = dataElementIdentifierMapping,
                             ),
                         )
                     }
@@ -411,7 +422,7 @@ object VerificationUtil {
     /**
      * Utility function to generate a W3C Digital Credentials API request for requesting a single SD-JWT credential.
      *
-     * The request can expressed for multiple exchange protocols simultaneously, for example OpenID4VP 1.0 and
+     * The request can be expressed for multiple exchange protocols simultaneously, for example OpenID4VP 1.0 and
      * ISO/IEC 18013:2025 Annex C.
      *
      * The following exchange protocols are supported by this function
@@ -448,12 +459,46 @@ object VerificationUtil {
         origin: String,
         clientId: String?,
         responseEncryptionKey: EcPublicKey?,
-        readerAuthenticationKey: AsymmetricKey?
+        readerAuthenticationKey: AsymmetricKey.X509Compatible?
     ): JsonObject {
         val requests = exchangeProtocols.map { exchangeProtocol ->
             buildJsonObject {
                 put("protocol", exchangeProtocol)
                 when (exchangeProtocol) {
+                    "org-iso-mdoc" -> {
+                        // TODO: 18013-5 request protocol only supports requesting a single VCT right now
+                        require(vct.size == 1) { "Only a single VCT is supported right now" }
+                        val docType = vct.first()
+
+                        val mapping = mutableMapOf<String, JsonArray>()
+                        val mdocClaims = claims.map { jsonRequestedClaim ->
+                            val flattenedPath = jsonRequestedClaim.claimPath.joinToString(separator = "_") { it.jsonPrimitive.content }
+                            val dataElementName = "sdjwtvc_$flattenedPath"
+                            mapping[dataElementName] = JsonArray(jsonRequestedClaim.claimPath)
+                            MdocRequestedClaim(
+                                docType = docType,
+                                namespaceName = "_",
+                                dataElementName = dataElementName,
+                                intentToRetain = false,  // TODO: maybe have caller pass a value
+                            )
+                        }
+                        put(
+                            "data",
+                            generateSingleRequest(
+                                exchangeProtocol = exchangeProtocol,
+                                docType = docType,
+                                claims = mdocClaims,
+                                docFormat = "sd-jwt+kb",
+                                dataElementIdentifierMapping = mapping,
+                                nonce = nonce,
+                                origin = origin,
+                                clientId = clientId,
+                                responseEncryptionKey = responseEncryptionKey,
+                                readerAuthenticationKey = readerAuthenticationKey,
+                                zkSystemSpecs = emptyList()
+                            )["data"] as JsonObject
+                        )
+                    }
                     "openid4vp",
                     "openid4vp-v1-unsigned",
                     "openid4vp-v1-signed" -> {
@@ -964,6 +1009,29 @@ object VerificationUtil {
                     expectedUpdate = null,
                     signedAt = null,
                     docType = zkDocument.documentData.docType
+                )
+            )
+        }
+        for (document in dr.otherDocuments) {
+            if (document.docFormat != "sd-jwt+kb") {
+                Logger.w(TAG, "Unknown docFormat ${document.docFormat}")
+                continue
+            }
+            val sdJwtKbCompactSerialization = document.data.toByteArray().inflate().decodeToString()
+
+            val sessionTranscriptBytes = Tagged(
+                tagNumber = Tagged.ENCODED_CBOR,
+                taggedItem = Bstr(Cbor.encode(sessionTranscript))
+            )
+            val nonce = Crypto.digest(Algorithm.SHA256, Cbor.encode(sessionTranscriptBytes))
+
+            verifiedPresentations.add(
+                verifySdJwtPresentation(
+                    now = now,
+                    compactSerialization = sdJwtKbCompactSerialization,
+                    nonce = ByteString(nonce),
+                    documentTypeRepository = documentTypeRepository,
+                    transactionData = listOf()  // TODO
                 )
             )
         }

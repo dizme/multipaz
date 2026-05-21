@@ -26,6 +26,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.multipaz.cbor.Cbor
 import org.multipaz.cbor.DataItem
+import org.multipaz.cbor.DiagnosticOption
 import org.multipaz.cbor.buildCborMap
 import org.multipaz.cbor.putCborArray
 import org.multipaz.cbor.putCborMap
@@ -49,6 +50,8 @@ import kotlin.time.Clock
 private const val TAG = "DigitalCredentials"
 
 private const val CREDMAN_DB_SHA256_KEY = "org.multipaz.CredmanDbSha256"
+
+private const val CREDMAN_MATCHER_SHA256_KEY = "org.multipaz.CredmanMatcherSha256"
 
 private fun getAttributeForJsonClaim(
     documentTypeRepository: DocumentTypeRepository,
@@ -100,29 +103,49 @@ private suspend fun updateCredmanUnlocked(
         documentTypeRepository = documentTypeRepository,
         selectedProtocols = selectedProtocols
     )
+    /*
+    Logger.i(TAG, "credentialDatabase: " +
+            Cbor.toDiagnostics(
+                item = credentialDatabase,
+                options = setOf(DiagnosticOption.EMBEDDED_CBOR, DiagnosticOption.PRETTY_PRINT, DiagnosticOption.BSTR_PRINT_LENGTH)
+            )
+    )
+     */
 
     val credentialDatabaseCbor = Cbor.encode(credentialDatabase)
-    //Logger.iCbor(TAG, "credentialDatabaseCbor", credentialDatabaseCbor)
 
     val endTime = Clock.System.now()
     Logger.i(TAG, "Credman database of ${credentialDatabaseCbor.size} bytes " +
             "generated in ${(endTime - startTime).inWholeMilliseconds} ms")
 
+    val matcher = loadMatcher(applicationContext)
+    val matcherSha256 = ByteString(Crypto.digest(Algorithm.SHA256, matcher))
+    val lastMatcherSha256 = documentStore.getTags().get<ByteString>(CREDMAN_MATCHER_SHA256_KEY)
+    val matcherNotChanged = lastMatcherSha256 != null && matcherSha256 == lastMatcherSha256
+
     val credDbSha256 = ByteString(Crypto.digest(Algorithm.SHA256, credentialDatabaseCbor))
     val lastCredDbSha256 = documentStore.getTags().get<ByteString>(CREDMAN_DB_SHA256_KEY)
-    if (lastCredDbSha256 != null && credDbSha256 == lastCredDbSha256) {
-        Logger.i(TAG, "No change in Credman database since last registration")
+    val credDbNotChanged = lastCredDbSha256 != null && credDbSha256 == lastCredDbSha256
+
+    if (matcherNotChanged && credDbNotChanged) {
+        Logger.i(TAG, "No change in Credman database or matcher since last registration")
         return
     }
     documentStore.getTags().edit {
-        set(CREDMAN_DB_SHA256_KEY, credDbSha256)
+        if (!matcherNotChanged) {
+            Logger.i(TAG, "Credman matcher changed since last registration")
+            set(CREDMAN_MATCHER_SHA256_KEY, matcherSha256)
+        }
+        if (!credDbNotChanged) {
+            Logger.i(TAG, "Credman database changed since last registration")
+            set(CREDMAN_DB_SHA256_KEY, credDbSha256)
+        }
     }
-
     val client = IdentityCredentialManager.getClient(applicationContext)
     client.registerCredentials(
         RegistrationRequest(
             credentials = credentialDatabaseCbor,
-            matcher = loadMatcher(applicationContext),
+            matcher = matcher,
             type = "com.credman.IdentityCredential",
             requestType = "",
             protocolTypes = emptyList(),
@@ -328,10 +351,7 @@ private fun resizedCardArt(cardArt: ByteArray?): ByteArray? {
             val stream = ByteArrayOutputStream()
             scaledIcon.compress(Bitmap.CompressFormat.PNG, 100, stream)
             val cardArtResized = stream.toByteArray()
-            Logger.i(
-                TAG,
-                "Resized cardart to 48x48, ${cardArt.size} bytes to ${cardArtResized.size} bytes"
-            )
+            //Logger.i(TAG, "Resized cardart to 48x48, ${cardArt.size} bytes to ${cardArtResized.size} bytes")
             cardArtResized
         }
 }

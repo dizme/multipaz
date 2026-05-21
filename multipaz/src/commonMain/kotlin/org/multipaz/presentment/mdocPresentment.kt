@@ -1,8 +1,17 @@
 package org.multipaz.presentment
 
+import kotlinx.io.bytestring.ByteString
+import kotlinx.io.bytestring.decodeToString
+import org.multipaz.cbor.Bstr
+import org.multipaz.cbor.Cbor
 import org.multipaz.cbor.DataItem
+import org.multipaz.cbor.Tagged
+import org.multipaz.cbor.buildCborArray
 import org.multipaz.cbor.toDataItem
+import org.multipaz.credential.SecureAreaBoundCredential
 import org.multipaz.crypto.Algorithm
+import org.multipaz.crypto.AsymmetricKey
+import org.multipaz.crypto.Crypto
 import org.multipaz.crypto.EcCurve
 import org.multipaz.crypto.EcPublicKey
 import org.multipaz.document.Document
@@ -14,17 +23,21 @@ import org.multipaz.mdoc.request.DeviceRequest
 import org.multipaz.mdoc.response.DeviceResponse
 import org.multipaz.mdoc.response.Iso18015ResponseException
 import org.multipaz.mdoc.response.MdocDocument
+import org.multipaz.mdoc.response.OtherDocument
 import org.multipaz.mdoc.response.buildDeviceResponse
 import org.multipaz.mdoc.transport.MdocTransportClosedException
 import org.multipaz.mdoc.zkp.ZkSystem
 import org.multipaz.mdoc.zkp.ZkSystemSpec
 import org.multipaz.request.MdocRequestedClaim
 import org.multipaz.request.Requester
+import org.multipaz.sdjwt.SdJwt
+import org.multipaz.sdjwt.credential.KeyBoundSdJwtVcCredential
 import org.multipaz.util.Logger
-import kotlin.collections.component1
-import kotlin.collections.component2
-import kotlin.collections.iterator
+import org.multipaz.util.deflate
+import org.multipaz.util.toBase64Url
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 private const val TAG = "mdocPresentment"
 
@@ -38,6 +51,7 @@ private const val TAG = "mdocPresentment"
  * @param keyAgreementPossible the list of curves for which key agreement is possible.
  * @param requesterAppId the appId if an app is making the request or `null`.
  * @param requesterOrigin the origin or `null`.
+ * @param creationTime the time to use for `creationTime` when presenting credentials such as SD-JWT+KB VCs.
  * @param preselectedDocuments the list of documents the user may have preselected earlier (for
  *   example an OS-provided credential picker like Android's Credential Manager) or the empty list
  *   if the user didn't preselect.
@@ -64,11 +78,12 @@ suspend fun mdocPresentment(
     keyAgreementPossible: List<EcCurve>,
     requesterAppId: String?,
     requesterOrigin: String?,
+    creationTime: Instant = Clock.System.now(),
     preselectedDocuments: List<Document> = emptyList(),
     onWaitingForUserInput: () -> Unit = {},
     onDocumentsInFocus: (documents: List<Document>) -> Unit
 ): MdocResponse {
-    val credentialsPresented = mutableSetOf<MdocCredential>()
+    val credentialsPresented = mutableSetOf<SecureAreaBoundCredential>()
     lateinit var eventData: EventPresentmentData
 
     val deviceResponse = buildDeviceResponse(
@@ -138,24 +153,128 @@ suspend fun mdocPresentment(
                 Logger.w(TAG, "Reader requested ZK proof but no compatible ZkSpec was found.")
             }
 
-            val document = MdocDocument.fromPresentment(
-                sessionTranscript = sessionTranscript,
-                eReaderKey = eReaderKey,
-                credential = match.credential as MdocCredential,
-                requestedClaims = match.claims.keys.toList() as List<MdocRequestedClaim>,
-                deviceNamespaces = computeTransactionResponse(match),
-                errors = mapOf()
-            )
-            if (zkSystemMatch != null) {
-                val zkDocument = zkSystemMatch.generateProof(
-                    zkSystemSpec = zkSystemSpec!!,
-                    document = document,
-                    sessionTranscript = sessionTranscript
-                )
-                addZkDocument(zkDocument)
-            } else {
-                addDocument(document)
+            // The session transcript to use depends on whether the response is to be encrypted
+            val sessionTranscriptToUse = match.source.docRequest.docRequestInfo?.docResponseEncryption?.let {
+                buildCborArray {
+                    add(sessionTranscript.asArray[0])
+                    add(Tagged(
+                        tagNumber = Tagged.ENCODED_CBOR,
+                        taggedItem = Bstr(Cbor.encode(it.dataItem))
+                    ))
+                    add(sessionTranscript.asArray[2])
+                }
+            } ?: sessionTranscript
+
+            when (match.credential) {
+                is MdocCredential -> {
+                    val document = MdocDocument.fromPresentment(
+                        sessionTranscript = sessionTranscriptToUse,
+                        eReaderKey = eReaderKey,
+                        credential = match.credential as MdocCredential,
+                        requestedClaims = match.claims.keys.toList() as List<MdocRequestedClaim>,
+                        deviceNamespaces = computeTransactionResponse(match),
+                        errors = mapOf()
+                    )
+
+                    if (zkSystemMatch != null) {
+                        val zkDocument = zkSystemMatch.generateProof(
+                            zkSystemSpec = zkSystemSpec!!,
+                            document = document,
+                            sessionTranscript = sessionTranscriptToUse
+                        )
+                        match.source.docRequest.docRequestInfo?.docResponseEncryption?.let { encryptionParameters ->
+                            addEncryptedDocuments(
+                                encryptionParameters = encryptionParameters,
+                                docRequestId = match.source.docRequest.docRequestId
+                            ) {
+                                addZkDocument(zkDocument)
+                            }
+                        } ?: addZkDocument(zkDocument)
+                    } else {
+                        match.source.docRequest.docRequestInfo?.docResponseEncryption?.let { encryptionParameters ->
+                            addEncryptedDocuments(
+                                encryptionParameters = encryptionParameters,
+                                docRequestId = match.source.docRequest.docRequestId
+                            ) {
+                                addDocument(document)
+                            }
+                        } ?: addDocument(document)
+                    }
+                }
+                is KeyBoundSdJwtVcCredential -> {
+                    val sessionTranscriptToUseBytes = Tagged(
+                        tagNumber = Tagged.ENCODED_CBOR,
+                        taggedItem = Bstr(Cbor.encode(sessionTranscriptToUse))
+                    )
+                    // The audience depends on readerAuthAll and/or readerAuth
+                    val audience = if (deviceRequest.readerAuthAll.isNotEmpty()) {
+                        val listOfReaderAuthAll = buildCborArray {
+                            deviceRequest.readerAuthAll.forEach {
+                                add(it.toDataItem())
+                            }
+                        }
+                        Crypto.digest(
+                            algorithm = Algorithm.SHA256,
+                            message = Cbor.encode(
+                                Tagged(
+                                    tagNumber = Tagged.ENCODED_CBOR,
+                                    taggedItem = Bstr(Cbor.encode(listOfReaderAuthAll))
+                                )
+                            )
+                        ).toBase64Url()
+                    } else if (match.source.docRequest.readerAuth != null) {
+                        Crypto.digest(
+                            algorithm = Algorithm.SHA256,
+                            message = Cbor.encode(
+                                Tagged(
+                                    tagNumber = Tagged.ENCODED_CBOR,
+                                    taggedItem = Bstr(Cbor.encode(match.source.docRequest.readerAuth!!.toDataItem()))
+                                )
+                            )
+                        ).toBase64Url()
+                    } else {
+                        "none"
+                    }
+                    val sdJwtVc = SdJwt.fromCompactSerialization(match.credential.issuerProvidedData.decodeToString())
+                    val pathsToDisclose = match.claims.map { (requestedClaim, _) ->
+                        requestedClaim as MdocRequestedClaim
+                        check(requestedClaim.namespaceName == "_") {
+                            "Expected _ for namespace, got ${requestedClaim.namespaceName}"
+                        }
+                        val path = match.source.docRequest.docRequestInfo?.dataElementIdentifierMapping[requestedClaim.dataElementName]
+                        check(path != null) {
+                            "No path for data element ${requestedClaim.dataElementName}"
+                        }
+                        path
+                    }
+                    val filteredSdJwtVc = sdJwtVc.filter(pathsToDisclose)
+                    val sdJwtKb = filteredSdJwtVc.present(
+                        signingKey = AsymmetricKey.AnonymousSecureAreaBased(
+                            alias = match.credential.alias,
+                            secureArea = match.credential.secureArea,
+                            keyInfo = match.credential.secureArea.getKeyInfo(match.credential.alias),
+                            unlockReason = PresentmentUnlockReason(match.credential),
+                        ),
+                        nonce = Crypto.digest(Algorithm.SHA256, Cbor.encode(sessionTranscriptToUseBytes)).toBase64Url(),
+                        audience = audience,
+                        creationTime = creationTime
+                    )
+                    val otherDocument = OtherDocument(
+                        docFormat = "sd-jwt+kb",
+                        data = ByteString(sdJwtKb.compactSerialization.encodeToByteArray().deflate())
+                    )
+                    match.source.docRequest.docRequestInfo?.docResponseEncryption?.let { encryptionParameters ->
+                        addEncryptedDocuments(
+                            encryptionParameters = encryptionParameters,
+                            docRequestId = match.source.docRequest.docRequestId
+                        ) {
+                            addOtherDocument(otherDocument)
+                        }
+                    } ?: addOtherDocument(otherDocument)
+                }
+                else -> throw IllegalStateException("No support for presenting credential of type ${match.credential.credentialType}")
             }
+
             match.credential.increaseUsageCount()
             credentialsPresented.add(match.credential)
         }

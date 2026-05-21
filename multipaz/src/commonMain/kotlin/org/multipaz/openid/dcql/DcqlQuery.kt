@@ -390,9 +390,11 @@ data class DcqlQuery(
                     "mso_mdoc", "mso_mdoc_zk" -> {
                         mdocDocType = meta["doctype_value"]!!.jsonPrimitive.content
                     }
-
                     "dc+sd-jwt" -> {
                         vctValues = meta["vct_values"]!!.jsonArray.map { it.jsonPrimitive.content }
+                    }
+                    else -> {
+                        throw IllegalArgumentException("Credential format $format is not supported")
                     }
                 }
 

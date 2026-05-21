@@ -114,7 +114,8 @@ actual object TestAppConfiguration {
                 )
             },
             preferredServices = listOf(
-                ComponentName(applicationContext, TestAppMdocNdefService::class.java)
+                ComponentName(applicationContext, TestAppMdocNdefService::class.java),
+                ComponentName(applicationContext, TestAppMdocNfcV2Service::class.java)
             )
         )
     }

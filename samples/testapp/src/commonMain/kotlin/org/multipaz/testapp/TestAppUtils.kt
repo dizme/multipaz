@@ -3,10 +3,12 @@ package org.multipaz.testapp
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.encodeToByteString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import multipazproject.samples.testapp.generated.resources.Res
 import multipazproject.samples.testapp.generated.resources.av18_card_art
@@ -57,6 +59,7 @@ import org.multipaz.mdoc.request.ZkRequest
 import org.multipaz.mdoc.request.buildDeviceRequest
 import org.multipaz.mdoc.request.buildDeviceRequestFromDcql
 import org.multipaz.mdoc.zkp.ZkSystemRepository
+import org.multipaz.request.JsonRequestedClaim
 import org.multipaz.sdjwt.SdJwt
 import org.multipaz.sdjwt.credential.KeyBoundSdJwtVcCredential
 import org.multipaz.sdjwt.credential.KeylessSdJwtVcCredential
@@ -104,6 +107,7 @@ object TestAppUtils {
         request: DocumentCannedRequest,
         encodedSessionTranscript: ByteArray,
         readerKey: AsymmetricKey.X509Compatible,
+        requestSdJwtVc: Boolean,
         signRequest: Boolean = true,
         zkSystemRepository: ZkSystemRepository? = null,
     ): ByteArray {
@@ -112,52 +116,101 @@ object TestAppUtils {
                 buildDeviceRequest(
                     sessionTranscript = RawCbor(encodedSessionTranscript)
                 ) {
-                    request.mdocRequest?.let { mdocRequest ->
-                        val itemsToRequest = mutableMapOf<String, MutableMap<String, Boolean>>()
-                        for (ns in mdocRequest.namespacesToRequest) {
-                            for ((de, intentToRetain) in ns.dataElementsToRequest) {
-                                itemsToRequest.getOrPut(ns.namespace) { mutableMapOf() }
-                                    .put(de.attribute.identifier, intentToRetain)
+                    if (requestSdJwtVc) {
+                        request.jsonRequest?.let { jsonRequest ->
+
+                            val claimsToRequest = mutableMapOf<String, Boolean>()
+                            val mapping = mutableMapOf<String, JsonArray>()
+                            jsonRequest.claimsToRequest.map { documentAttribute ->
+                                val path = mutableListOf<JsonElement>()
+                                documentAttribute.parentAttribute?.let {
+                                    path.add(JsonPrimitive(it.identifier))
+                                }
+                                path.add(JsonPrimitive(documentAttribute.identifier))
+                                val flattenedPath = path.joinToString(separator = "_") { it.jsonPrimitive.content }
+                                val dataElementName = "sdjwtvc_$flattenedPath"
+                                claimsToRequest[dataElementName] = false
+                                mapping[dataElementName] = JsonArray(path)
                             }
-                        }
-                        val zkRequest = if (mdocRequest.useZkp) {
-                            if (zkSystemRepository == null) {
-                                throw IllegalStateException("zkSystemRepository is null")
-                            }
-                            ZkRequest(
-                                systemSpecs = zkSystemRepository.getAllZkSystemSpecs(),
-                                zkRequired = false
-                            )
-                        } else {
-                            null
-                        }
-                        val otherInfo = mutableMapOf<String, DataItem>()
-                        for (transactionData in request.transactionData) {
-                            val type = transactionData.transactionType
-                            otherInfo[type.mdocRequestInfoKeyName] = Tagged(
-                                tagNumber = Tagged.ENCODED_CBOR,
-                                taggedItem = Cbor.encode(transactionData.attributes).toDataItem()
-                            )
-                        }
-                        if (signRequest) {
-                            addDocRequest(
-                                docType = mdocRequest.docType,
-                                nameSpaces = itemsToRequest,
-                                docRequestInfo = DocRequestInfo(
-                                    zkRequest = zkRequest,
-                                    otherInfo = otherInfo
-                                ),
-                                readerKey = readerKey,
-                            )
-                        } else {
-                            addDocRequest(
-                                docType = mdocRequest.docType,
-                                nameSpaces = itemsToRequest,
-                                docRequestInfo = DocRequestInfo(
-                                    zkRequest = zkRequest,
-                                    otherInfo = otherInfo
+                            val otherInfo = mutableMapOf<String, DataItem>()
+                            for (transactionData in request.transactionData) {
+                                val type = transactionData.transactionType
+                                otherInfo[type.mdocRequestInfoKeyName] = Tagged(
+                                    tagNumber = Tagged.ENCODED_CBOR,
+                                    taggedItem = Cbor.encode(transactionData.attributes).toDataItem()
                                 )
-                            )
+                            }
+                            if (signRequest) {
+                                addDocRequest(
+                                    docType = jsonRequest.vct,
+                                    nameSpaces = mapOf("_" to claimsToRequest),
+                                    docRequestInfo = DocRequestInfo(
+                                        docFormat = "sd-jwt+kb",
+                                        dataElementIdentifierMapping = mapping,
+                                        otherInfo = otherInfo
+                                    ),
+                                    readerKey = readerKey,
+                                )
+                            } else {
+                                addDocRequest(
+                                    docType = jsonRequest.vct,
+                                    nameSpaces = mapOf("_" to claimsToRequest),
+                                    docRequestInfo = DocRequestInfo(
+                                        docFormat = "sd-jwt+kb",
+                                        dataElementIdentifierMapping = mapping,
+                                        otherInfo = otherInfo
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        request.mdocRequest?.let { mdocRequest ->
+                            val itemsToRequest = mutableMapOf<String, MutableMap<String, Boolean>>()
+                            for (ns in mdocRequest.namespacesToRequest) {
+                                for ((de, intentToRetain) in ns.dataElementsToRequest) {
+                                    itemsToRequest.getOrPut(ns.namespace) { mutableMapOf() }
+                                        .put(de.attribute.identifier, intentToRetain)
+                                }
+                            }
+                            val zkRequest = if (mdocRequest.useZkp) {
+                                if (zkSystemRepository == null) {
+                                    throw IllegalStateException("zkSystemRepository is null")
+                                }
+                                ZkRequest(
+                                    systemSpecs = zkSystemRepository.getAllZkSystemSpecs(),
+                                    zkRequired = false
+                                )
+                            } else {
+                                null
+                            }
+                            val otherInfo = mutableMapOf<String, DataItem>()
+                            for (transactionData in request.transactionData) {
+                                val type = transactionData.transactionType
+                                otherInfo[type.mdocRequestInfoKeyName] = Tagged(
+                                    tagNumber = Tagged.ENCODED_CBOR,
+                                    taggedItem = Cbor.encode(transactionData.attributes).toDataItem()
+                                )
+                            }
+                            if (signRequest) {
+                                addDocRequest(
+                                    docType = mdocRequest.docType,
+                                    nameSpaces = itemsToRequest,
+                                    docRequestInfo = DocRequestInfo(
+                                        zkRequest = zkRequest,
+                                        otherInfo = otherInfo
+                                    ),
+                                    readerKey = readerKey,
+                                )
+                            } else {
+                                addDocRequest(
+                                    docType = mdocRequest.docType,
+                                    nameSpaces = itemsToRequest,
+                                    docRequestInfo = DocRequestInfo(
+                                        zkRequest = zkRequest,
+                                        otherInfo = otherInfo
+                                    )
+                                )
+                            }
                         }
                     }
                 }

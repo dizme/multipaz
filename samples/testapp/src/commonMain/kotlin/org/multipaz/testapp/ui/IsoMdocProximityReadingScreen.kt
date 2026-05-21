@@ -104,7 +104,8 @@ private suspend fun selectConnectionMethod(
 
 private data class RequestPickerEntry(
     val displayName: String,
-    val request: DocumentCannedRequest
+    val request: DocumentCannedRequest,
+    val requestSdJwtVc: Boolean
 )
 
 private var lastRequest: Int = 0
@@ -125,18 +126,35 @@ fun IsoMdocProximityReadingScreen(
     ) -> Unit
 ) {
     val requestOptions = mutableListOf<RequestPickerEntry>()
-    for (documentType in TestAppUtils.provisionedDocumentTypes) {
+    for (documentType in app.documentTypeRepository.documentTypes) {
         for (sampleRequest in documentType.cannedRequests) {
-            requestOptions.add(RequestPickerEntry(
-                displayName = "${documentType.displayName}: ${sampleRequest.displayName}",
-                request = sampleRequest
-            ))
+            if (sampleRequest.mdocRequest != null) {
+                requestOptions.add(
+                    RequestPickerEntry(
+                        displayName = "${documentType.displayName}: ${sampleRequest.displayName}",
+                        request = sampleRequest,
+                        requestSdJwtVc = false
+                    )
+                )
+            }
+        }
+        for (sampleRequest in documentType.cannedRequests) {
+            if (sampleRequest.jsonRequest != null) {
+                requestOptions.add(
+                    RequestPickerEntry(
+                        displayName = "${documentType.displayName}: ${sampleRequest.displayName} (SD-JWT VC)",
+                        request = sampleRequest,
+                        requestSdJwtVc = true
+                    )
+                )
+            }
         }
     }
     for (request in wellKnownMultipleDocumentRequests) {
         requestOptions.add(RequestPickerEntry(
             displayName = "Multi-doc: ${request.displayName}",
-            request = request
+            request = request,
+            requestSdJwtVc = false
         ))
     }
     val requestDropdownExpanded = remember { mutableStateOf(false) }
@@ -393,6 +411,7 @@ fun IsoMdocProximityReadingScreen(
                                             request = requestSelected.value.request,
                                             encodedSessionTranscript = readerSessionTranscript.value!!,
                                             readerKey = app.readerKey,
+                                            requestSdJwtVc = requestSelected.value.requestSdJwtVc,
                                             signRequest = app.settingsModel.signRequest.value
                                         )
                                     readerMostRecentDeviceResponse.value = byteArrayOf()
@@ -892,6 +911,7 @@ private suspend fun doReaderFlowWithTransport(
         request = selectedRequest.value.request,
         encodedSessionTranscript = readerSessionTranscript.value!!,
         readerKey = app.readerKey,
+        requestSdJwtVc = selectedRequest.value.requestSdJwtVc,
         zkSystemRepository = app.zkSystemRepository,
         signRequest = signRequest
     )

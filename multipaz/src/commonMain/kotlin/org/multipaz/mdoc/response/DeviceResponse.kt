@@ -34,6 +34,7 @@ import kotlin.time.Instant
  * @property documents a list of returned documents.
  * @property zkDocuments a list of returned documents with ZKP.
  * @property encryptedDocuments a list of returned encrypted documents.
+ * @property otherDocuments a list of returned documents in other formats, such as SD-JWT VC.
  * @property documentErrors a list of returned errors.
  */
 @ConsistentCopyVisibility
@@ -43,6 +44,7 @@ data class DeviceResponse internal constructor(
     private val documents_: List<MdocDocument>,
     val zkDocuments: List<ZkDocument>,
     val encryptedDocuments: List<EncryptedDocuments>,
+    val otherDocuments: List<OtherDocument>,
     val documentErrors: List<Map<String, Int>>
 ) {
     private var numTimesVerifyCalled = 0
@@ -57,7 +59,7 @@ data class DeviceResponse internal constructor(
     /**
      * Verifies the integrity of the returned documents, according to ISO/IEC 18013-5.
      *
-     * The following checks are performed for each [MdocDocument] instance in [documents].
+     * The following checks are performed for each [MdocDocument] instance in [documents]:
      * - For [MdocDocument.issuerAuth] the signature is checked against the leaf certificate in the associated X.509 chain.
      * - The document type in the MSO matches the docType in the response.
      * - The MSO is validity period includes the passed-in [atTime].
@@ -65,6 +67,16 @@ data class DeviceResponse internal constructor(
      * - The device-authentication structures (ECDSA or MAC) are checked.
      * - For each transaction data in the list, verifies that transaction hash is present in the
      *    response and matches the hash of the source transaction data
+     *
+     * The following checks are performed for each [OtherDocument] instance in [otherDocuments]:
+     *  - For document format `sd-jwt+kb`:
+     *    - The SD-JWT+KB is constructed from decompressing [OtherDocument.data]
+     *    - Verification is done with [org.multipaz.sdjwt.SdJwtKb.verify] using the issuer signing key
+     *      from the leaf certificate in the [org.multipaz.sdjwt.SdJwt.x5c], the nonce derived from
+     *      the session transcript, creation-time is checked against the passed-in [atTime], and
+     *      audience is checked to be derived from `ReaderAuthAll` or `ReaderAuth` for signed
+     *      requests or `none` for unsigned requests.
+     *    - The credential's validity period includes the passed-in [atTime].
      *
      * The following checks are expected to be done by the application:
      * - Determining whether the issuer's document signing certificate is trusted.
@@ -78,7 +90,7 @@ data class DeviceResponse internal constructor(
      * @param sessionTranscript the session transcript to use.
      * @param eReaderKey the ephemeral reader key or `null` if not using session encryption.
      * @param transactionDataList list of transactions for each document in this [DeviceResponse]
-     * @param atTime the point in time for validating the whether returned documents are valid.
+     * @param atTime the point in time for validating whether returned documents are valid.
      * @return list of per-document transaction responses; each response is a map; a key in this
      *  map is a transaction identifier, and the value is a map with an entry for each item in
      *  the transaction response data, including "transaction_data_hash".
@@ -90,8 +102,9 @@ data class DeviceResponse internal constructor(
         transactionDataList: List<List<TransactionData>> = emptyList(),
         atTime: Instant = Clock.System.now(),
     ): List<Map<String, Map<String, DataItem>>> {
+        // TODO: modify verify() to take a DeviceRequest
         numTimesVerifyCalled += 1
-        return documents_.mapIndexed { index, document ->
+        val transactionDataFromDocuments = documents_.mapIndexed { index, document ->
             try {
                 val transactionData = if (index < transactionDataList.size) {
                     transactionDataList[index]
@@ -104,6 +117,20 @@ data class DeviceResponse internal constructor(
                 throw IllegalStateException("Error verifying document $index in DeviceResponse", e)
             }
         }
+        val transactionDataFromOtherDocuments = otherDocuments.mapIndexed { index, otherDocument ->
+            try {
+                val transactionData = if (index < transactionDataList.size) {
+                    transactionDataList[index]
+                } else {
+                    emptyList()
+                }
+                otherDocument.verify(sessionTranscript, eReaderKey, transactionData, atTime)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                throw IllegalStateException("Error verifying otherDocument $index in DeviceResponse", e)
+            }
+        }
+        return transactionDataFromDocuments + transactionDataFromOtherDocuments
     }
 
     /**
@@ -127,6 +154,11 @@ data class DeviceResponse internal constructor(
         if (encryptedDocuments.isNotEmpty()) {
             putCborArray("encryptedDocuments") {
                 encryptedDocuments.forEach { add(it.toDataItem()) }
+            }
+        }
+        if (otherDocuments.isNotEmpty()) {
+            putCborArray("otherDocuments") {
+                otherDocuments.forEach { add(it.toDataItem()) }
             }
         }
         if (documentErrors.isNotEmpty()) {
@@ -217,6 +249,9 @@ data class DeviceResponse internal constructor(
             val encryptedDocuments = dataItem.getOrNull("encryptedDocuments")?.asArray?.map {
                 EncryptedDocuments.fromDataItem(it)
             }
+            val otherDocuments = dataItem.getOrNull("otherDocuments")?.asArray?.map {
+                OtherDocument.fromDataItem(it)
+            }
             val documentErrors = dataItem.getOrNull("documentErrors")?.asArray?.map {
                 it.asMap.entries.associate { (docType, errorCode) ->
                     docType.asTstr to errorCode.asNumber.toInt()
@@ -228,6 +263,7 @@ data class DeviceResponse internal constructor(
                 documents_ = documents ?: emptyList(),
                 zkDocuments = zkDocuments ?: emptyList(),
                 encryptedDocuments = encryptedDocuments ?: emptyList(),
+                otherDocuments = otherDocuments ?: emptyList(),
                 documentErrors = documentErrors ?: emptyList()
             )
         }
@@ -250,6 +286,7 @@ data class DeviceResponse internal constructor(
         internal val documents = mutableListOf<MdocDocument>()
         internal val zkDocuments = mutableListOf<ZkDocument>()
         internal val encryptedDocuments = mutableListOf<EncryptedDocuments>()
+        internal val otherDocuments = mutableListOf<OtherDocument>()
         internal val documentErrors = mutableListOf<Map<String, Int>>()
 
         /**
@@ -360,6 +397,18 @@ data class DeviceResponse internal constructor(
         }
 
         /**
+         * Adds a [OtherDocument] to the response.
+         *
+         * @param otherDocument an [OtherDocument].
+         * @return the builder.
+         */
+        fun addOtherDocument(
+            otherDocument: OtherDocument
+        ) = apply {
+            this.otherDocuments.add(otherDocument)
+        }
+
+        /**
          * Adds errors to the response.
          *
          * @param documentError A map from docType to error codes.
@@ -377,11 +426,11 @@ data class DeviceResponse internal constructor(
          * @return a [DeviceResponse] object.
          */
         fun build(): DeviceResponse {
-            val versionToUse = version ?: if (zkDocuments.isNotEmpty() || encryptedDocuments.isNotEmpty()) {
-                "1.1"
-            } else {
-                "1.0"
-            }
+            val versionToUse = version ?: if (
+                zkDocuments.isNotEmpty() ||
+                encryptedDocuments.isNotEmpty() ||
+                otherDocuments.isNotEmpty()
+            ) "1.1" else "1.0"
 
             val deviceResponse = DeviceResponse(
                 version = versionToUse,
@@ -389,6 +438,7 @@ data class DeviceResponse internal constructor(
                 documents_ = documents,
                 zkDocuments = zkDocuments,
                 encryptedDocuments = encryptedDocuments,
+                otherDocuments = otherDocuments,
                 documentErrors = documentErrors,
             )
             return deviceResponse

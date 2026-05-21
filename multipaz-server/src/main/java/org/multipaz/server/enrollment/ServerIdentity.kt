@@ -128,7 +128,14 @@ enum class ServerIdentity(
      * RPC authentication to access [PaymentProcessor] interface used by a verifier
      * that can accept payment transactions.
      */
-    PAYMENT_PROCESSOR("Payment Processor");
+    PAYMENT_PROCESSOR("Payment Processor"),
+
+    /**
+     * An identity for reader root CA.
+     */
+    READER_ROOT("Reader Root")
+
+    ;
 
     /**
      * A name for the identity that is formatted for use in JSON and in URLs (lowercase,

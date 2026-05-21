@@ -10,42 +10,58 @@ import org.multipaz.crypto.X509Cert
 /**
  * Parameters to use when requesting to encrypt a document response.
  *
- * @property recipientPublicKey the public key to encrypt the response against.
- * @property recipientCertificates zero or more certificates for [recipientPublicKey].
- * @property nonce optional nonce to use.
+ * @param dataItem a [DataItem] which is a map with keys `recipientPublicKey`, `recipientCertificate`, and `nonce`
+ * as defined in ISO/IEC 18013-5 Second Edition.
  */
 data class EncryptionParameters(
-    val recipientPublicKey: EcPublicKey,
-    val recipientCertificates: List<X509Cert> = emptyList(),
-    val nonce: ByteString? = null
+    val dataItem: DataItem
 ) {
 
-    internal fun toDataItem() = buildCborMap {
-        put("recipientPublicKey", recipientPublicKey.toCoseKey().toDataItem())
-        if (recipientCertificates.isNotEmpty()) {
-            putCborArray("recipientCertificate") {
-                for (cert in recipientCertificates) {
-                    add(cert.toDataItem())
-                }
-            }
-        }
-        nonce?.let {
-            put("nonce", nonce.toByteArray())
-        }
-    }
+    /**
+     * @param recipientPublicKey the public key to encrypt the response against.
+     */
+    val recipientPublicKey: EcPublicKey
+        get() = dataItem["recipientPublicKey"].asCoseKey.ecPublicKey
+
+    /**
+     * @param recipientCertificates zero or more certificates for [recipientPublicKey].
+     */
+    val recipientCertificates: List<X509Cert>
+        get() = dataItem.getOrNull("recipientCertificate")?.asArray?.map {
+            X509Cert(ByteString(it.asBstr))
+        } ?: emptyList()
+
+    /**
+     * Optional nonce to use.
+     */
+    val nonce: ByteString?
+        get() = dataItem.getOrNull("nonce")?.asBstr?.let { ByteString(it) }
 
     companion object {
-        internal fun fromDataItem(dataItem: DataItem): EncryptionParameters {
-            val recipientPublicKey = dataItem["recipientPublicKey"].asCoseKey.ecPublicKey
-            val recipientCertificate = dataItem.getOrNull("recipientCertificate")?.asArray?.map {
-                X509Cert(ByteString(it.asBstr))
-            } ?: emptyList()
-            val nonce = dataItem.getOrNull("nonce")?.asBstr?.let { ByteString(it) }
-            return EncryptionParameters(
-                recipientPublicKey = recipientPublicKey,
-                recipientCertificates = recipientCertificate,
-                nonce = nonce
-            )
-        }
+        /**
+         * Creates a new [EncryptionParameters] from values.
+         *
+         * @param recipientPublicKey the public key to encrypt the response against.
+         * @param recipientCertificates zero or more certificates for [recipientPublicKey].
+         * @param nonce optional nonce to use.
+         * @return a [EncryptionParameters] instance.
+         */
+        fun fromValues(
+            recipientPublicKey: EcPublicKey,
+            recipientCertificates: List<X509Cert> = emptyList(),
+            nonce: ByteString? = null
+        ) = EncryptionParameters(buildCborMap {
+            put("recipientPublicKey", recipientPublicKey.toCoseKey().toDataItem())
+            if (recipientCertificates.isNotEmpty()) {
+                putCborArray("recipientCertificate") {
+                    for (cert in recipientCertificates) {
+                        add(cert.toDataItem())
+                    }
+                }
+            }
+            nonce?.let {
+                put("nonce", nonce.toByteArray())
+            }
+        })
     }
 }

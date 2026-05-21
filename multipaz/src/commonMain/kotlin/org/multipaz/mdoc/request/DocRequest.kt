@@ -15,14 +15,16 @@ import org.multipaz.crypto.X509CertChain
  * @property docType the document type.
  * @property nameSpaces the namespaces and data items to request, with intentToRetain.
  * @property docRequestInfo a [DocRequestInfo] or `null`.
+ * @property docRequestId the index of the [DocRequest] in [DeviceRequest].
  */
 @ConsistentCopyVisibility
 data class DocRequest internal constructor(
     val docType: String,
     val nameSpaces: Map<String, Map<String, Boolean>>,
     val docRequestInfo: DocRequestInfo?,
+    val docRequestId: Int,
     internal val readerAuth_: CoseSign1?,
-    internal val itemsRequestBytes: DataItem
+    internal val itemsRequestBytes: DataItem,
 ) {
     internal var readerAuthVerified: Boolean = false
 
@@ -66,7 +68,10 @@ data class DocRequest internal constructor(
     }
 
     companion object {
-        internal fun fromDataItem(dataItem: DataItem): DocRequest {
+        internal fun fromDataItem(
+            dataItem: DataItem,
+            docRequestId: Int
+        ): DocRequest {
             val itemsRequestBytes = dataItem["itemsRequest"]
             val itemsRequest = itemsRequestBytes.asTaggedEncodedCbor
             val readerAuth = dataItem.getOrNull("readerAuth")?.asCoseSign1
@@ -87,8 +92,9 @@ data class DocRequest internal constructor(
                 docType = docType,
                 nameSpaces = nameSpaces,
                 docRequestInfo = docRequestInfo,
+                docRequestId = docRequestId,
                 readerAuth_ = readerAuth,
-                itemsRequestBytes = itemsRequestBytes
+                itemsRequestBytes = itemsRequestBytes,
             )
         }
     }

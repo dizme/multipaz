@@ -181,7 +181,7 @@ class MultiDeviceTestsServer(
             }
             delay(prewarmDuration)
             Logger.i(TAG, "Done waiting")
-            withTimeout(15.seconds) {
+            withTimeout(45.seconds) {
                 sendChannel.writeStringUtf8("TestPresentationStart\n")
                 transport.open(eDeviceKey.publicKey)
                 val sessionEstablishmentMessage = transport.waitForMessage()

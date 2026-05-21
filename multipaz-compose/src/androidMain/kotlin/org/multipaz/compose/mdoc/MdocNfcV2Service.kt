@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.io.bytestring.ByteString
 import org.multipaz.cbor.Cbor
 import org.multipaz.cbor.DataItem
+import org.multipaz.cbor.buildCborMap
 import org.multipaz.context.initializeApplication
 import org.multipaz.crypto.Crypto
 import org.multipaz.crypto.EcCurve
@@ -33,6 +34,7 @@ import org.multipaz.mdoc.transport.MdocTransportFactory
 import org.multipaz.mdoc.transport.MdocTransportOptions
 import org.multipaz.mdoc.transport.NfcHybridTransportMdoc
 import org.multipaz.nfc.CommandApdu
+import org.multipaz.nfc.Nfc
 import org.multipaz.nfc.ResponseApdu
 import org.multipaz.presentment.Iso18013Presentment
 import org.multipaz.presentment.PresentmentCanceledException
@@ -380,6 +382,17 @@ abstract class MdocNfcV2Service: HostApduService() {
         listenForCancellationFromUiJob = null
     }
 
+    private val CommandApdu.isApplicationSelect: Boolean
+        get() = ins == Nfc.INS_SELECT && p1 == Nfc.INS_SELECT_P1_APPLICATION
+
+    private val firstCommandResponse = ResponseApdu(
+        status = Nfc.RESPONSE_STATUS_SUCCESS,
+        payload = ByteString(Cbor.encode(buildCborMap {
+            put(0, 65536L /* apduCommandMaxSize */)
+        }))
+    )
+    private var applicationSelectProcessed = false
+
     // Called by coroutine running in I/O thread, see onCreate() for details
     private suspend fun processCommandApdu(commandApdu: CommandApdu): ResponseApdu? {
         // TODO: maybe need replay and super-fast response as in mdocReaderNfcHandover.kt function processCommandApdu()
@@ -390,7 +403,11 @@ abstract class MdocNfcV2Service: HostApduService() {
         try {
             engagement?.let {
                 val responseApdu = it.processApdu(commandApdu)
-                return responseApdu
+                if (commandApdu.isApplicationSelect && applicationSelectProcessed) {
+                    Logger.i(TAG, "Skipping response to APPLICATION SELECT since it's already been processed")
+                } else {
+                    return responseApdu
+                }
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -426,7 +443,14 @@ abstract class MdocNfcV2Service: HostApduService() {
         // Bounce the APDU to processCommandApdu() above via the coroutine in I/O thread set up in onCreate()
         val commandApdu = CommandApdu.decode(encodedCommandApdu)
         if (!engagementComplete) {
-            val unused = dispatchChannel.trySend(CommandApduData(commandApdu))
+            if (commandApdu.isApplicationSelect) {
+                applicationSelectProcessed = true
+                Logger.i(TAG, "Processing APPLICATION SELECT synchronously")
+                val unused = dispatchChannel.trySend(CommandApduData(commandApdu))
+                return firstCommandResponse.encode()
+            } else {
+                val unused = dispatchChannel.trySend(CommandApduData(commandApdu))
+            }
         } else {
             Logger.w(TAG, "Engagement complete but received APDU $commandApdu")
         }

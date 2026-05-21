@@ -68,4 +68,11 @@ enum class Plan(
         ),
         prewarm = true,
     ),
+    BLE_CENTRAL_CLIENT_MODE_L2CAP_PSM_IN_TWO_WAY_ENGAGEMENT_LONG(
+        description = "BLE Central Client L2CAP w/ PSM in Engagement",
+        tests = listOf(
+            Pair(Test.MDOC_CENTRAL_CLIENT_MODE_L2CAP_PSM_IN_TWO_WAY_ENGAGEMENT, 200),
+        ),
+        prewarm = true,
+    ),
 }

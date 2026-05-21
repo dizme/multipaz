@@ -94,6 +94,7 @@ import org.multipaz.util.Logger
 import org.multipaz.util.UUID
 import org.multipaz.util.fromBase64Url
 import org.multipaz.util.fromHexByteString
+import org.multipaz.util.inflate
 import org.multipaz.util.toBase64Url
 import org.multipaz.utopia.knowntypes.addUtopiaTypes
 import org.multipaz.verification.VerificationUtil
@@ -1626,6 +1627,17 @@ private suspend fun handleGetDataMdoc(
                 )
             }
         }
+        for (otherDocument in deviceResponse.otherDocuments) {
+            lines.add(ResultLine("OtherDocument", otherDocument.docFormat))
+            if (otherDocument.docFormat == "sd-jwt+kb") {
+                val compactSerialization = otherDocument.data.toByteArray().inflate().decodeToString()
+                handleGetDataAppendSdJwt(
+                    compactSerialization = compactSerialization,
+                    lines = lines
+                )
+            }
+        }
+        // TODO: handle encryptedDocuments too
         pages.add(ResultPage(lines))
     }
     return pages
@@ -1637,7 +1649,6 @@ private suspend fun handleGetDataSdJwt(
     clientIdToUse: String,
 ): List<ResultPage> {
     val pages = mutableListOf<ResultPage>()
-    val trustManager = getIssuerTrustManager()
 
     for (presentationString in session.verifiablePresentations) {
         val lines = mutableListOf<ResultLine>()
@@ -1646,74 +1657,85 @@ private suspend fun handleGetDataSdJwt(
             lines.add(ResultLine("W3C DC Protocol", dcProtocol))
         }
 
-        Logger.d(TAG, "Handling SD-JWT: $presentationString")
-        val (sdJwt, sdJwtKb) = if (presentationString.endsWith("~")) {
-            Pair(SdJwt.fromCompactSerialization(presentationString), null)
-        } else {
-            val sdJwtKb = SdJwtKb.fromCompactSerialization(presentationString)
-            Pair(sdJwtKb.sdJwt, sdJwtKb)
-        }
-        val issuerCert = sdJwt.x5c?.certificates?.first()
-        if (issuerCert == null) {
-            lines.add(ResultLine("Error", "Issuer-signed key not in `x5c` in header"))
-        } else {
-            val trustResult = trustManager.verify(sdJwt.x5c!!.certificates)
-            if (trustResult.isTrusted) {
-                val tp = trustResult.trustPoints[0]
-                val name = tp.metadata.displayName ?: tp.certificate.subject.name
-                lines.add(ResultLine("Issuer", "In trust list ($name)"))
-            } else {
-                val name = issuerCert.subject.name
-                lines.add(ResultLine("Issuer", "Not in trust list ($name)"))
-            }
-        }
-        if (sdJwtKb == null && sdJwt.jwtBody["cnf"] != null) {
-            lines.add(
-                ResultLine(
-                    "Error",
-                    "`cnf` claim present but we got a SD-JWT, not a SD-JWT+KB"
-                )
-            )
-        }
-
-        if (sdJwtKb != null && issuerCert != null) {
-            // TODO: actually check nonce, audience, and creationTime
-            try {
-                var receivedAudience = ""
-                val processedJwt = sdJwtKb.verify(
-                    issuerKey = issuerCert.ecPublicKey,
-                    checkNonce = { nonce -> true },
-                    checkAudience = { audience -> receivedAudience = audience; true },
-                    checkCreationTime = { creationTime -> true },
-                    transactionData = listOf()
-                )
-                lines.add(ResultLine("Key Binding", "Verified"))
-                lines.add(ResultLine("Audience", receivedAudience))
-
-                for ((claimName, claimValue) in processedJwt) {
-                    val claimValueStr = prettyJson.encodeToString(claimValue)
-                    lines.add(ResultLine(claimName, claimValueStr))
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                lines.add(ResultLine("Key Binding", "Error validating: $e"))
-            }
-        } else if (issuerCert != null) {
-            try {
-                val processedJwt = sdJwt.verify(issuerCert.ecPublicKey)
-                for ((claimName, claimValue) in processedJwt) {
-                    val claimValueStr = prettyJson.encodeToString(claimValue)
-                    lines.add(ResultLine(claimName, claimValueStr))
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                lines.add(ResultLine("Error", "Error validating signature: $e"))
-            }
-        }
-
+        handleGetDataAppendSdJwt(
+            compactSerialization = presentationString,
+            lines = lines
+        )
         pages.add(ResultPage(lines))
     }
     return pages
+}
+
+private suspend fun handleGetDataAppendSdJwt(
+   compactSerialization: String,
+   lines: MutableList<ResultLine>,
+) {
+    val trustManager = getIssuerTrustManager()
+
+    Logger.d(TAG, "Handling SD-JWT: $compactSerialization")
+    val (sdJwt, sdJwtKb) = if (compactSerialization.endsWith("~")) {
+        Pair(SdJwt.fromCompactSerialization(compactSerialization), null)
+    } else {
+        val sdJwtKb = SdJwtKb.fromCompactSerialization(compactSerialization)
+        Pair(sdJwtKb.sdJwt, sdJwtKb)
+    }
+    val issuerCert = sdJwt.x5c?.certificates?.first()
+    if (issuerCert == null) {
+        lines.add(ResultLine("Error", "Issuer-signed key not in `x5c` in header"))
+    } else {
+        val trustResult = trustManager.verify(sdJwt.x5c!!.certificates)
+        if (trustResult.isTrusted) {
+            val tp = trustResult.trustPoints[0]
+            val name = tp.metadata.displayName ?: tp.certificate.subject.name
+            lines.add(ResultLine("Issuer", "In trust list ($name)"))
+        } else {
+            val name = issuerCert.subject.name
+            lines.add(ResultLine("Issuer", "Not in trust list ($name)"))
+        }
+    }
+    if (sdJwtKb == null && sdJwt.jwtBody["cnf"] != null) {
+        lines.add(
+            ResultLine(
+                "Error",
+                "`cnf` claim present but we got a SD-JWT, not a SD-JWT+KB"
+            )
+        )
+    }
+
+    if (sdJwtKb != null && issuerCert != null) {
+        // TODO: actually check nonce, audience, and creationTime
+        try {
+            var receivedAudience = ""
+            val processedJwt = sdJwtKb.verify(
+                issuerKey = issuerCert.ecPublicKey,
+                checkNonce = { nonce -> true },
+                checkAudience = { audience -> receivedAudience = audience; true },
+                checkCreationTime = { creationTime -> true },
+                transactionData = listOf()
+            )
+            lines.add(ResultLine("Key Binding", "Verified"))
+            lines.add(ResultLine("Audience", receivedAudience))
+
+            for ((claimName, claimValue) in processedJwt) {
+                val claimValueStr = prettyJson.encodeToString(claimValue)
+                lines.add(ResultLine(claimName, claimValueStr))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            lines.add(ResultLine("Key Binding", "Error validating: $e"))
+        }
+    } else if (issuerCert != null) {
+        try {
+            val processedJwt = sdJwt.verify(issuerCert.ecPublicKey)
+            for ((claimName, claimValue) in processedJwt) {
+                val claimValueStr = prettyJson.encodeToString(claimValue)
+                lines.add(ResultLine(claimName, claimValueStr))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            lines.add(ResultLine("Error", "Error validating signature: $e"))
+        }
+    }
 }
 
 // defined in ISO 18013-7 Annex B
@@ -2091,6 +2113,7 @@ private suspend fun calcDcRequestNew(
             zkSystemSpecs = zkSystemSpecs
         )
     }
+    Logger.iJson(TAG, "request", request)
 
     val dcRequestProtocol = request["requests"]!!.jsonArray[0].jsonObject["protocol"]!!.jsonPrimitive.content
     val dcRequestString = Json.encodeToString(request["requests"]!!.jsonArray[0].jsonObject["data"]!!.jsonObject)
@@ -2338,41 +2361,69 @@ private suspend fun AnnexACalcRequest(
     if (requestId.isNotEmpty()) {
         val request = lookupWellknownRequest(requestFormat, requestDocType, requestId)
 
-        val zkSystemSpecs: List<ZkSystemSpec> = if (request.mdocRequest!!.useZkp) {
-            getZkSystemRepository().getAllZkSystemSpecs()
-        } else {
-            emptyList()
-        }
-
-        val itemsToRequest = mutableMapOf<String, MutableMap<String, Boolean>>()
-        for (ns in request.mdocRequest!!.namespacesToRequest) {
-            for ((de, intentToRetain) in ns.dataElementsToRequest) {
-                itemsToRequest.getOrPut(ns.namespace) { mutableMapOf() }
-                    .put(de.attribute.identifier, intentToRetain)
+        if (requestFormat == "mdoc") {
+            val zkSystemSpecs: List<ZkSystemSpec> = if (request.mdocRequest!!.useZkp) {
+                getZkSystemRepository().getAllZkSystemSpecs()
+            } else {
+                emptyList()
             }
-        }
-
-        val zkRequest = if (request.mdocRequest!!.useZkp) {
-            ZkRequest(
-                systemSpecs = zkSystemSpecs,
-                zkRequired = false
-            )
+            val itemsToRequest = mutableMapOf<String, MutableMap<String, Boolean>>()
+            for (ns in request.mdocRequest!!.namespacesToRequest) {
+                for ((de, intentToRetain) in ns.dataElementsToRequest) {
+                    itemsToRequest.getOrPut(ns.namespace) { mutableMapOf() }
+                        .put(de.attribute.identifier, intentToRetain)
+                }
+            }
+            val zkRequest = if (request.mdocRequest!!.useZkp) {
+                ZkRequest(
+                    systemSpecs = zkSystemSpecs,
+                    zkRequired = false
+                )
+            } else {
+                null
+            }
+            return buildDeviceRequest(
+                sessionTranscript = sessionTranscript
+            ) {
+                addDocRequest(
+                    docType = request.mdocRequest!!.docType,
+                    nameSpaces = itemsToRequest,
+                    docRequestInfo = DocRequestInfo(
+                        zkRequest = zkRequest
+                    ),
+                    readerKey = readerAuthKey
+                )
+                addReaderAuthAll(readerKey = readerAuthKey)
+            }
         } else {
-            null
-        }
-
-        return buildDeviceRequest(
-            sessionTranscript = sessionTranscript
-        ) {
-            addDocRequest(
-                docType = request.mdocRequest!!.docType,
-                nameSpaces = itemsToRequest,
-                docRequestInfo = DocRequestInfo(
-                    zkRequest = zkRequest
-                ),
-                readerKey = readerAuthKey
-            )
-            addReaderAuthAll(readerKey = readerAuthKey)
+            check(requestFormat == "vc") { "unexpected request format $requestFormat" }
+            val claimsToRequest = mutableMapOf<String, Boolean>()
+            val mapping = mutableMapOf<String, JsonArray>()
+            request.jsonRequest!!.claimsToRequest.forEach { documentAttribute ->
+                val path = mutableListOf<JsonElement>()
+                documentAttribute.parentAttribute?.let {
+                    path.add(JsonPrimitive(it.identifier))
+                }
+                path.add(JsonPrimitive(documentAttribute.identifier))
+                val flattenedPath = path.joinToString(separator = "_") { it.jsonPrimitive.content }
+                val dataElementName = "sdjwtvc_$flattenedPath"
+                claimsToRequest[dataElementName] = false
+                mapping[dataElementName] = JsonArray(path)
+            }
+            return buildDeviceRequest(
+                sessionTranscript = sessionTranscript
+            ) {
+                addDocRequest(
+                    docType = request.jsonRequest!!.vct,
+                    nameSpaces = mapOf("_" to claimsToRequest),
+                    docRequestInfo = DocRequestInfo(
+                        docFormat = "sd-jwt+kb",
+                        dataElementIdentifierMapping = mapping
+                    ),
+                    readerKey = readerAuthKey
+                )
+                addReaderAuthAll(readerKey = readerAuthKey)
+            }
         }
     } else {
         val dcql = if (multiDocumentRequestId.isNotEmpty()) {

@@ -37,9 +37,11 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         NfcAdapter.getDefaultAdapter(this)?.let { adapter ->
             val cardEmulation = CardEmulation.getInstance(adapter)
-            val componentName = ComponentName(this, TestAppMdocNdefService::class.java)
-            if (!cardEmulation.setPreferredService(this, componentName)) {
-                Logger.w(TAG, "CardEmulation.setPreferredService() returned false")
+            for (klass in listOf(TestAppMdocNdefService::class.java, TestAppMdocNfcV2Service::class.java)) {
+                val componentName = ComponentName(this, klass)
+                if (!cardEmulation.setPreferredService(this, componentName)) {
+                    Logger.w(TAG, "CardEmulation.setPreferredService() returned false")
+                }
             }
             if (!cardEmulation.categoryAllowsForegroundPreference(CardEmulation.CATEGORY_OTHER)) {
                 Logger.w(TAG, "CardEmulation.categoryAllowsForegroundPreference(CATEGORY_OTHER) returned false")

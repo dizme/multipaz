@@ -17,6 +17,7 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.os.Build
 import android.os.ParcelUuid
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import org.multipaz.cbor.Bstr
 import org.multipaz.cbor.Cbor
@@ -38,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.bytestring.ByteStringBuilder
 import kotlinx.io.bytestring.buildByteString
@@ -46,9 +48,11 @@ import org.multipaz.util.appendByteArray
 import org.multipaz.util.appendUInt32
 import org.multipaz.util.getUInt32
 import java.io.InputStream
+import kotlin.compareTo
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.min
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -172,7 +176,7 @@ internal class BleCentralManagerAndroid : BleCentralManager {
 
     private class ConnectionFailedException(
         message: String
-    ) : Throwable(message)
+    ) : Exception(message)
 
     private val scanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -507,6 +511,18 @@ internal class BleCentralManagerAndroid : BleCentralManager {
             //
             Logger.i(TAG, "Failed to find peripheral after $retryCount attempt(s) of 10 secs. Restarting scan.")
         }
+        // Defensively cancel Classic Discovery.
+        if (bluetoothManager.adapter.isDiscovering) {
+            try {
+                Logger.i(TAG, "Calling cancelDiscovery()")
+                bluetoothManager.adapter.cancelDiscovery()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Logger.w(TAG, "Ignoring error when calling cancelDiscovery", e)
+            }
+        }
+        // Give the radio time to actually transition out of the scanning state.
+        delay(150.milliseconds)
     }
 
     override suspend fun connectToPeripheral() {
@@ -745,10 +761,79 @@ internal class BleCentralManagerAndroid : BleCentralManager {
         }
     }
 
+
+    private suspend fun callWithRetry(
+        maxRetries: Int = 10,
+        initialDelay: Duration = 500.milliseconds,
+        maxDelay: Duration = 4.seconds,
+        action: suspend () -> Unit,
+        cleanupOnFailure: suspend () -> Unit
+    ) {
+        var currentDelay = initialDelay
+        var numTries = 0
+        while (true) {
+            try {
+                numTries++
+                action()
+                return
+            } catch (e: Exception) {
+                cleanupOnFailure()
+
+                // Re-throw CancellationException immediately so coroutine cancellation works
+                if (e is CancellationException) throw e
+
+                if (numTries >= maxRetries) {
+                    throw IllegalStateException("Failed after $maxRetries attempts", e)
+                }
+
+                Logger.i(TAG, "Failed (Attempt $numTries), trying again in $currentDelay. Error: ${e.message}")
+                delay(currentDelay)
+                currentDelay = (currentDelay.inWholeMilliseconds * 2).milliseconds
+                if (currentDelay > maxDelay) {
+                    currentDelay = maxDelay
+                }
+            }
+        }
+    }
+
     @RequiresApi(api = Build.VERSION_CODES.Q)
-    private fun connectL2capQ(psm: Int) {
-        l2capSocket = device!!.createInsecureL2capChannel(psm)
-        l2capSocket!!.connect()
+    private suspend fun connectL2capQ(psm: Int) {
+        callWithRetry(
+            action = {
+                l2capSocket = device!!.createInsecureL2capChannel(psm)
+                val result = withTimeoutOrNull(3.seconds) {
+                    suspendCancellableCoroutine<Unit> { cont ->
+                        val connectJob = CoroutineScope(Dispatchers.IO).launch {
+                            try {
+                                l2capSocket!!.connect()
+                                if (cont.isActive) cont.resume(Unit)
+                            } catch (e: Exception) {
+                                if (cont.isActive) cont.resumeWithException(e)
+                            }
+                        }
+                        cont.invokeOnCancellation {
+                            Logger.w(TAG, "Connection timeout triggered, aggressively closing socket")
+                            try {
+                                l2capSocket?.close()
+                            } catch (_: Exception) {
+                            }
+                            connectJob.cancel()
+                        }
+                    }
+                }
+                if (result == null) {
+                    throw ConnectionFailedException("L2CAP connection timed out after 3 seconds")
+                }
+            },
+            cleanupOnFailure = {
+                try {
+                    l2capSocket?.close()
+                } catch (e: Exception) {
+                    Logger.w(TAG, "Error during cleanup close", e)
+                }
+                l2capSocket = null
+            }
+        )
 
         // Start reading in a coroutine
         CoroutineScope(Dispatchers.IO).launch {

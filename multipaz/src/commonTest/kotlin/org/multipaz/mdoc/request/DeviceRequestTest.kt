@@ -5,6 +5,10 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.io.bytestring.ByteString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import org.multipaz.asn1.ASN1Integer
 import org.multipaz.cbor.Cbor
 import org.multipaz.cbor.DiagnosticOption
@@ -694,7 +698,7 @@ class DeviceRequestTest {
                     )
                 ),
                 docRequestInfo = DocRequestInfo(
-                    docResponseEncryption = EncryptionParameters(
+                    docResponseEncryption = EncryptionParameters.fromValues(
                         recipientPublicKey = recipientKey.publicKey,
                     )
                 ),
@@ -822,6 +826,76 @@ class DeviceRequestTest {
                 }
               ]
             }
+            """.trimIndent().trim(),
+            Cbor.toDiagnostics(
+                item =deviceRequest.toDataItem(),
+                options = setOf(DiagnosticOption.EMBEDDED_CBOR, DiagnosticOption.PRETTY_PRINT)
+            )
+        )
+        assertEquals(DeviceRequest.fromDataItem(deviceRequest.toDataItem()), deviceRequest)
+    }
+
+    @Test
+    fun deviceRequestInfoDocFormatAndDataElementIdentifierMapping() = runTest {
+        val sessionTranscript = buildCborArray { add("Doesn't matter") }
+        val deviceRequest = buildDeviceRequest(
+            sessionTranscript = sessionTranscript
+        ) {
+            addDocRequest(
+                docType = EUPersonalID.EUPID_VCT,
+                nameSpaces = mapOf(
+                    "_" to mapOf(
+                        "sdjwtvc_given_name" to false,
+                        "sdjwtvc_family_name" to false,
+                        "sdjwtvc_degrees" to false,
+                        "sdjwtvc_nationalities" to false,
+                        "sdjwtvc_age_over_18" to false,
+                    )
+                ),
+                docRequestInfo = DocRequestInfo(
+                    docFormat = "sd-jwt+kb",
+                    dataElementIdentifierMapping = mapOf(
+                        "sdjwtvc_given_name" to buildJsonArray { add("given_name") },
+                        "sdjwtvc_family_name" to buildJsonArray { add("family_name") },
+                        "sdjwtvc_degrees" to buildJsonArray { add("degrees"); add(JsonNull); add("type") },
+                        "sdjwtvc_nationalities" to buildJsonArray { add("nationalities"); add(1) },
+                        "sdjwtvc_age_over_18" to buildJsonArray { add("age_equal_or_over"); add("18") },
+                    )
+                )
+            )
+        }
+        assertEquals("1.1", deviceRequest.version)
+        assertEquals(
+            """
+                {
+                  "version": "1.1",
+                  "docRequests": [
+                    {
+                      "itemsRequest": 24(<< {
+                        "docType": "urn:eudi:pid:1",
+                        "nameSpaces": {
+                          "_": {
+                            "sdjwtvc_given_name": false,
+                            "sdjwtvc_family_name": false,
+                            "sdjwtvc_degrees": false,
+                            "sdjwtvc_nationalities": false,
+                            "sdjwtvc_age_over_18": false
+                          }
+                        },
+                        "requestInfo": {
+                          "docFormat": "sd-jwt+kb",
+                          "dataElementIdentifierMapping": {
+                            "sdjwtvc_given_name": ["given_name"],
+                            "sdjwtvc_family_name": ["family_name"],
+                            "sdjwtvc_degrees": ["degrees", null, "type"],
+                            "sdjwtvc_nationalities": ["nationalities", 1],
+                            "sdjwtvc_age_over_18": ["age_equal_or_over", "18"]
+                          }
+                        }
+                      } >>)
+                    }
+                  ]
+                }
             """.trimIndent().trim(),
             Cbor.toDiagnostics(
                 item =deviceRequest.toDataItem(),

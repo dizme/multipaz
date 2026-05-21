@@ -18,7 +18,7 @@ class DeviceRequestDcqlConversionsTest {
     }
 
     @Test
-    fun sdjwtInDcqlFails() {
+    fun unknownFormatInDcqlFails() {
         val e = assertFailsWith(IllegalArgumentException::class) {
             val deviceRequest = buildDeviceRequestFromDcql(
                 sessionTranscript = buildCborArray { add("doesn't"); add("matter") },
@@ -27,7 +27,7 @@ class DeviceRequestDcqlConversionsTest {
                       "credentials": [
                         {
                           "id": "my_credential",
-                          "format": "dc+sd-jwt",
+                          "format": "some-unknown-format",
                           "meta": {
                             "vct_values": ["urn:eudi:pid:1"]
                           },
@@ -41,7 +41,115 @@ class DeviceRequestDcqlConversionsTest {
                 """.trimIndent()
             ) {}
         }
-        assertEquals("Credential format dc+sd-jwt is not supported", e.message)
+        assertEquals("Credential format some-unknown-format is not supported", e.message)
+    }
+
+    @Test
+    fun singleSdJwtVc() {
+        val deviceRequest = buildDeviceRequestFromDcql(
+            sessionTranscript = buildCborArray { add("doesn't"); add("matter") },
+            dcqlString = """
+                {
+                  "credentials": [
+                    {
+                      "id": "my_credential",
+                      "format": "dc+sd-jwt",
+                      "meta": {
+                        "vct_values": ["urn:eudi:pid:1"]
+                      },
+                      "claims": [
+                        {"path": ["given_name"]},
+                        {"path": ["address", "street_address"]}
+                      ]
+                    }
+                  ]
+                }
+            """.trimIndent()
+        ) {}
+        assertEquals(
+            """
+                {
+                  "version": "1.1",
+                  "docRequests": [
+                    {
+                      "itemsRequest": 24(<< {
+                        "docType": "urn:eudi:pid:1",
+                        "nameSpaces": {
+                          "_": {
+                            "sdjwtkb_given_name": false,
+                            "sdjwtkb_address_street_address": false
+                          }
+                        },
+                        "requestInfo": {
+                          "docFormat": "sd-jwt+kb",
+                          "dataElementIdentifierMapping": {
+                            "sdjwtkb_given_name": ["given_name"],
+                            "sdjwtkb_address_street_address": ["address", "street_address"]
+                          }
+                        }
+                      } >>)
+                    }
+                  ],
+                  "deviceRequestInfo": 24(<< {
+                    "useCases": [
+                      {
+                        "mandatory": true,
+                        "documentSets": [
+                          [0]
+                        ]
+                      }
+                    ]
+                  } >>)
+                }
+            """.trimIndent(),
+            Cbor.toDiagnostics(
+                item = deviceRequest.toDataItem(),
+                options = setOf(DiagnosticOption.PRETTY_PRINT)
+            )
+        )
+        assertEquals(
+            """
+                {
+                  "credentials": [
+                    {
+                      "id": "cred0",
+                      "format": "dc+sd-jwt",
+                      "meta": {
+                        "vct_values": [
+                          "urn:eudi:pid:1"
+                        ]
+                      },
+                      "claims": [
+                        {
+                          "id": "claim0",
+                          "path": [
+                            "given_name"
+                          ]
+                        },
+                        {
+                          "id": "claim1",
+                          "path": [
+                            "address",
+                            "street_address"
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "credential_sets": [
+                    {
+                      "required": true,
+                      "options": [
+                        [
+                          "cred0"
+                        ]
+                      ]
+                    }
+                  ]
+                }
+            """.trimIndent(),
+            prettyJson.encodeToString(deviceRequest.toDcql())
+        )
     }
 
     @Test
