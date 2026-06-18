@@ -11,7 +11,6 @@ The container bundles:
 - **Records Server** (System of Record) - at `/records/` (port 8004)
 - **CSA Server** (Credential Security Agent) - at `/csa/` (port 8005)
 - **Backend Server** - at `/backend/` (port 8008)
-- **Payment Server** - at `/upay/` (port 8009)
 - **nginx** - reverse proxy routing all services through port 8000
 
 ## Prerequisites
@@ -127,7 +126,6 @@ All services are available through the nginx proxy on port 8000:
 | Records             | http://localhost:8000/records/    |
 | CSA                 | http://localhost:8000/csa/        |
 | Backend             | http://localhost:8000/backend/    |
-| Payment             | http://localhost:8000/upay/       |
 
 ## Deploying to a Server
 

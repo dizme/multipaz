@@ -2,12 +2,14 @@
 // Tasks for building Docker images and deployment bundles
 
 val serverProjects = listOf(
+    "multipaz-verifier",
     "multipaz-verifier-server",
+    "multipaz-openid4vci",
     "multipaz-openid4vci-server",
     "multipaz-backend-server",
+    "multipaz-records",
     "multipaz-records-server",
     "multipaz-csa-server",
-    "multipaz-upay-server",
 )
 
 tasks.register("collectDependencies") {
@@ -17,7 +19,7 @@ tasks.register("collectDependencies") {
     // Depend on jar tasks for server projects plus their full runtime classpath build dependencies
     for (name in serverProjects) {
         val serverProject = project(":${name}")
-        dependsOn("${serverProject.path}:jar")
+        dependsOn(serverProject.tasks.named("jar"))
         dependsOn(serverProject.configurations.getByName("runtimeClasspath").buildDependencies)
     }
 
@@ -38,7 +40,9 @@ tasks.register("collectDependencies") {
             val runtimeCp = serverProject.configurations.getByName("runtimeClasspath")
 
             // Copy the thin server JAR
-            val shortName = name.removePrefix("multipaz-").removeSuffix("-server")
+            val baseName = name.removeSuffix(":backend")
+            val simpleName = baseName.substring(baseName.lastIndexOf(':') + 1)
+            val shortName = simpleName.removePrefix("multipaz-")
             val jarFile = serverProject.tasks.getByName<Jar>("jar").archiveFile.get().asFile
             jarFile.copyTo(File(jarsDir, "${shortName}.jar"), overwrite = true)
 
@@ -159,7 +163,7 @@ tasks.register<Exec>("runDockerImage") {
     commandLine(
         containerTool, "run",
         "--rm",
-        "-p", "8000-8009:8000-8009",
+        "-p", "8000-8010:8000-8010",
         "multipaz/server-bundle:latest"
     )
 }

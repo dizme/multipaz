@@ -28,13 +28,14 @@ import org.multipaz.mdoc.response.buildDeviceResponse
 import org.multipaz.mdoc.transport.MdocTransportClosedException
 import org.multipaz.mdoc.zkp.ZkSystem
 import org.multipaz.mdoc.zkp.ZkSystemSpec
+import org.multipaz.openid.OpenID4VP.processTransactions
 import org.multipaz.request.MdocRequestedClaim
 import org.multipaz.request.Requester
 import org.multipaz.sdjwt.SdJwt
 import org.multipaz.sdjwt.credential.KeyBoundSdJwtVcCredential
 import org.multipaz.util.Logger
-import org.multipaz.util.deflate
 import org.multipaz.util.toBase64Url
+import org.multipaz.util.zlibDeflate
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -85,13 +86,16 @@ suspend fun mdocPresentment(
 ): MdocResponse {
     val credentialsPresented = mutableSetOf<SecureAreaBoundCredential>()
     lateinit var eventData: EventPresentmentData
+    if (Logger.isDebugEnabled) {
+        Logger.dCbor(TAG, "DeviceRequest", deviceRequest.toDataItem())
+    }
 
     val deviceResponse = buildDeviceResponse(
         sessionTranscript = sessionTranscript,
         status = DeviceResponse.STATUS_OK,
         eReaderKey = eReaderKey,
     ) {
-        val presentmentData = try {
+        val iso18013Response = try {
             deviceRequest.execute(
                 presentmentSource = source,
                 keyAgreementPossible = keyAgreementPossible,
@@ -112,7 +116,10 @@ suspend fun mdocPresentment(
         val selection = source.showConsentPrompt(
             requester = requester,
             trustMetadata = trustMetadata,
-            credentialPresentmentData = presentmentData,
+            consentData = ConsentData.fromCredentialQueryResult(
+                credentialQueryResult = iso18013Response,
+                source = source
+            ),
             preselectedDocuments = preselectedDocuments,
             onDocumentsInFocus = onDocumentsInFocus
         )
@@ -170,7 +177,7 @@ suspend fun mdocPresentment(
                     val document = MdocDocument.fromPresentment(
                         sessionTranscript = sessionTranscriptToUse,
                         eReaderKey = eReaderKey,
-                        credential = match.credential as MdocCredential,
+                        credential = match.credential,
                         requestedClaims = match.claims.keys.toList() as List<MdocRequestedClaim>,
                         deviceNamespaces = computeTransactionResponse(match),
                         errors = mapOf()
@@ -248,6 +255,11 @@ suspend fun mdocPresentment(
                         path
                     }
                     val filteredSdJwtVc = sdJwtVc.filter(pathsToDisclose)
+                    val transactionResponse = processTransactions(
+                        credential = match.credential,
+                        transactionData = match.transactionData,
+                        docRequestId = match.source.docRequest.docRequestId
+                    )
                     val sdJwtKb = filteredSdJwtVc.present(
                         signingKey = AsymmetricKey.AnonymousSecureAreaBased(
                             alias = match.credential.alias,
@@ -258,10 +270,16 @@ suspend fun mdocPresentment(
                         nonce = Crypto.digest(Algorithm.SHA256, Cbor.encode(sessionTranscriptToUseBytes)).toBase64Url(),
                         audience = audience,
                         creationTime = creationTime
-                    )
+                    ) {
+                        if (!match.transactionData.isEmpty()) {
+                            for ((key, response) in transactionResponse) {
+                                put(key, response)
+                            }
+                        }
+                    }
                     val otherDocument = OtherDocument(
                         docFormat = "sd-jwt+kb",
-                        data = ByteString(sdJwtKb.compactSerialization.encodeToByteArray().deflate())
+                        data = ByteString(sdJwtKb.compactSerialization.encodeToByteArray().zlibDeflate())
                     )
                     match.source.docRequest.docRequestInfo?.docResponseEncryption?.let { encryptionParameters ->
                         addEncryptedDocuments(
@@ -285,6 +303,9 @@ suspend fun mdocPresentment(
             trustMetadata = trustMetadata
         )
     }
+    if (Logger.isDebugEnabled) {
+        Logger.dCbor(TAG, "DeviceResponse", deviceResponse.toDataItem())
+    }
     return MdocResponse(
         deviceResponse = deviceResponse,
         eventData = eventData
@@ -302,6 +323,12 @@ internal suspend fun computeTransactionResponse(
             }
             put("transaction_data_hash",
                 transaction.getHash(alg ?: Algorithm.SHA256).toByteArray().toDataItem())
+            (match.source as? CredentialMatchSourceIso18013)?.let { source ->
+                // This is generally not available anywhere is the ISO 18013 response,
+                // but it is needed to verify the transaction, so we keep it in the
+                // transaction response.
+                put("doc_request_id", source.docRequest.docRequestId.toDataItem())
+            }
             transaction.type.applyCbor(
                 transactionData = transaction,
                 credential = match.credential

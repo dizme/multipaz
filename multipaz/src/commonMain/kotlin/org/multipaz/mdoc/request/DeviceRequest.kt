@@ -43,7 +43,7 @@ import org.multipaz.mdoc.util.mdocVersionCompareTo
 import org.multipaz.mdoc.zkp.ZkSystemSpec
 import org.multipaz.openid.dcql.DcqlQuery
 import org.multipaz.presentment.CredentialMatchSourceIso18013
-import org.multipaz.presentment.CredentialPresentmentData
+import org.multipaz.presentment.CredentialQueryResult
 import org.multipaz.presentment.CredentialPresentmentSet
 import org.multipaz.presentment.CredentialPresentmentSetOption
 import org.multipaz.presentment.CredentialPresentmentSetOptionMember
@@ -113,7 +113,7 @@ data class DeviceRequest private constructor(
                 if (deviceRequestInfo != null) {
                     add(Tagged(
                         tagNumber = Tagged.ENCODED_CBOR,
-                        taggedItem = Bstr(Cbor.encode(deviceRequestInfo.toDataItem()))
+                        taggedItem = Bstr(Cbor.encode(deviceRequestInfo.dataItem))
                     ))
                 } else {
                     add(Simple.NULL)
@@ -193,7 +193,7 @@ data class DeviceRequest private constructor(
         deviceRequestInfo?.let {
             put("deviceRequestInfo", Tagged(
                 tagNumber = Tagged.ENCODED_CBOR,
-                taggedItem = Bstr(Cbor.encode(it.toDataItem()))
+                taggedItem = Bstr(Cbor.encode(it.dataItem))
             ))
         }
         if (readerAuthAll_.isNotEmpty()) {
@@ -224,7 +224,7 @@ data class DeviceRequest private constructor(
             }
             val deviceRequestInfo = dataItem.getOrNull("deviceRequestInfo")?.let {
                 if (version.mdocVersionCompareTo("1.1") >= 0) {
-                    DeviceRequestInfo.fromDataItem(it.asTaggedEncodedCbor)
+                    DeviceRequestInfo(it.asTaggedEncodedCbor)
                 } else {
                     Logger.w(TAG, "Ignoring deviceRequestInfo field since version is less than 1.1")
                     null
@@ -255,9 +255,9 @@ data class DeviceRequest private constructor(
      * @property version the version to use or `null` to automatically determine which version to use.
      */
     class Builder(
-        val sessionTranscript: DataItem,
-        val deviceRequestInfo: DeviceRequestInfo? = null,
-        val version: String? = null,
+        private val sessionTranscript: DataItem,
+        private var deviceRequestInfo: DeviceRequestInfo? = null,
+        private val version: String? = null,
     ) {
         private val docRequests = mutableListOf<DocRequest>()
         private val readerAuthAll = mutableListOf<CoseSign1>()
@@ -385,6 +385,21 @@ data class DeviceRequest private constructor(
         }
 
         /**
+         * Sets [DeviceRequestInfo] to use.
+         *
+         * This overrides the [DeviceRequestInfo] set in the [DeviceRequest.Builder] constructor.
+         *
+         * @param deviceRequestInfo the [DeviceRequestInfo] to use or `null` to not use a [DeviceRequestInfo].
+         */
+        fun setDeviceRequestInfo(deviceRequestInfo: DeviceRequestInfo? = null): Builder {
+            check(readerAuthAll.isEmpty()) {
+                "Cannot call setDeviceRequestInfo() after addReaderAuthAll()"
+            }
+            this.deviceRequestInfo = deviceRequestInfo
+            return this
+        }
+
+        /**
          * Adds a signature over the entire request.
          *
          * After calling this, [addDocRequest] must not be called.
@@ -401,14 +416,12 @@ data class DeviceRequest private constructor(
                         add(it.itemsRequestBytes)
                     }
                 }
-                if (deviceRequestInfo != null) {
+                deviceRequestInfo?.let {
                     add(Tagged(
                         tagNumber = Tagged.ENCODED_CBOR,
-                        taggedItem = Bstr(Cbor.encode(deviceRequestInfo.toDataItem()))
+                        taggedItem = Bstr(Cbor.encode(it.dataItem))
                     ))
-                } else {
-                    add(Simple.NULL)
-                }
+                } ?: add(Simple.NULL)
             }
             val readerAuthenticationAllBytes = Cbor.encode(item = Tagged(
                 tagNumber = Tagged.ENCODED_CBOR,
@@ -479,7 +492,7 @@ data class DeviceRequest private constructor(
     /**
      * Executes the ISO 18013-5 request against a [PresentmentSource].
      *
-     * If successful, this returns a [CredentialPresentmentData] which can be used in
+     * If successful, this returns a [CredentialQueryResult] which can be used in
      * an user interface for the user to select which combination of credentials to return, see
      * [Consent] composable in `multipaz-compose` and [Consent] view in `multipaz-swift` for examples
      * of how to do this.
@@ -489,14 +502,14 @@ data class DeviceRequest private constructor(
      * @param presentmentSource the [PresentmentSource] to use as a source of truth for presentment.
      * @param keyAgreementPossible if non-empty, a credential using Key Agreement may be returned provided
      *   its private key is using one of the given curves.
-     * @return the resulting [CredentialPresentmentData] if the query was successful.
+     * @return the resulting [CredentialQueryResult] if the query was successful.
      * @throws [Iso18015ResponseException] if it's not possible satisfy the query.
      */
     @Throws(Iso18015ResponseException::class, CancellationException::class)
     suspend fun execute(
         presentmentSource: PresentmentSource,
         keyAgreementPossible: List<EcCurve> = emptyList(),
-    ): CredentialPresentmentData {
+    ): CredentialQueryResult {
         // First find all matches for all DocRequests
         val docRequestResults = docRequests.map { docRequest ->
             findMatchesForDocRequest(
@@ -586,7 +599,7 @@ data class DeviceRequest private constructor(
             }
         }
 
-        return CredentialPresentmentData(credentialSets)
+        return CredentialQueryResult(credentialSets)
     }
 
     private suspend fun findMatchesForDocRequest(
@@ -1122,14 +1135,14 @@ internal fun deviceRequestCalcDeviceRequestInfo(
     }
 
     return if (useCases.isNotEmpty()) {
-        DeviceRequestInfo(
+        DeviceRequestInfo.fromValues(
             useCases = useCases,
             otherInfo = otherInfo
         )
     } else {
         // TODO: UseCases is optional even in a 1.1 request but iOS 26 currently assumes it's set.
         //   This has been reported to Apple so this can be removed once their bug-fix is out.
-        DeviceRequestInfo(
+        DeviceRequestInfo.fromValues(
             useCases = listOf(
                 UseCase(
                     mandatory = true,

@@ -1,9 +1,13 @@
 plugins {
     id("java-library")
     id("org.jetbrains.kotlin.jvm")
+    id("maven-publish")
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.ksp)
 }
+
+val projectVersionCode: Int by rootProject.extra
+val projectVersionName: String by rootProject.extra
 
 kotlin {
     jvmToolchain(17)
@@ -45,4 +49,49 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.server.test.host)
 }
+
+group = "org.multipaz"
+version = projectVersionName
+
+publishing {
+    repositories {
+        maven {
+            url = uri(rootProject.layout.buildDirectory.dir("staging-repo"))
+        }
+    }
+    publications {
+        create<MavenPublication>("library") {
+            afterEvaluate {
+                from(components["java"])
+            }
+        }
+    }
+    publications.withType(MavenPublication::class) {
+        pom {
+            name.set("multipaz-openid4vci")
+            description.set("Multipaz SDK openid4vci module")
+            url.set("https://github.com/openwallet-foundation/multipaz")
+            licenses {
+                license {
+                    name.set("Apache-2.0")
+                    url.set("https://opensource.org/licenses/Apache-2.0")
+                    distribution.set("repo")
+                }
+            }
+            developers {
+                developer {
+                    id.set("zeuthen")
+                    name.set("David Zeuthen")
+                    email.set("zeuthen@google.com")
+                }
+            }
+            scm {
+                connection.set("scm:git:git://github.com/openwallet-foundation/multipaz.git")
+                developerConnection.set("scm:git:ssh://github.com/openwallet-foundation/multipaz.git")
+                url.set("https://github.com/openwallet-foundation/multipaz")
+            }
+        }
+    }
+}
+
 

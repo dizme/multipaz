@@ -544,7 +544,11 @@ class CredentialData {
             ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
             entry = ks.getEntry(mCredentialKeyAlias, null);
+            if (entry == null) {
+                throw new CredentialInvalidatedException("Failed getting key used for credential");
+            }
         } catch (CertificateException
+                | CredentialInvalidatedException
                 | IOException
                 | NoSuchAlgorithmException
                 | KeyStoreException
@@ -640,7 +644,11 @@ class CredentialData {
             ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
             entry = ks.getEntry(data.mCredentialKeyAlias, null);
+            if (entry == null) {
+                throw new CredentialInvalidatedException("Failed getting key used for credential");
+            }
         } catch (CertificateException
+                | CredentialInvalidatedException
                 | IOException
                 | NoSuchAlgorithmException
                 | KeyStoreException
@@ -821,6 +829,9 @@ class CredentialData {
             String dataKeyAlias = getDataKeyAliasFromCredentialName(mCredentialName);
 
             KeyStore.Entry entry = ks.getEntry(dataKeyAlias, null);
+            if (entry == null) {
+                throw new CredentialInvalidatedException("Failed getting key used for credential");
+            }
             SecretKey secretKey = ((KeyStore.SecretKeyEntry) entry).getSecretKey();
 
             int offset = 0;
@@ -850,6 +861,7 @@ class CredentialData {
                 offset += chunkSize;
             } while (!lastChunk);
         } catch (NoSuchPaddingException
+                | CredentialInvalidatedException
                 | BadPaddingException
                 | NoSuchAlgorithmException
                 | CertificateException
@@ -1002,6 +1014,9 @@ class CredentialData {
             KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
             KeyStore.Entry entry = ks.getEntry(dataKeyAlias, null);
+            if (entry == null) {
+                throw new CredentialInvalidatedException("Failed getting key used for credential");
+            }
             SecretKey secretKey = ((KeyStore.SecretKeyEntry) entry).getSecretKey();
 
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -1025,6 +1040,7 @@ class CredentialData {
             return baos.toByteArray();
 
         } catch (InvalidAlgorithmParameterException
+                | CredentialInvalidatedException
                 | NoSuchPaddingException
                 | BadPaddingException
                 | NoSuchAlgorithmException
@@ -1054,6 +1070,9 @@ class CredentialData {
             KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
             KeyStore.Entry entry = ks.getEntry(dataKeyAlias, null);
+            if (entry == null) {
+                throw new CredentialInvalidatedException("Failed getting key used for credential");
+            }
             SecretKey secretKey = ((KeyStore.SecretKeyEntry) entry).getSecretKey();
 
             if (encryptedFileData.length < 12) {
@@ -1069,6 +1088,7 @@ class CredentialData {
             cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(128, iv));
             fileData = cipher.doFinal(cipherText);
         } catch (InvalidAlgorithmParameterException
+                | CredentialInvalidatedException
                 | NoSuchPaddingException
                 | BadPaddingException
                 | NoSuchAlgorithmException
@@ -1666,7 +1686,11 @@ class CredentialData {
             KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
             entry = ks.getEntry(candidate.mAlias, null);
+            if (entry == null) {
+                throw new CredentialInvalidatedException("Failed getting key used for credential");
+            }
         } catch (CertificateException
+                | CredentialInvalidatedException
                 | IOException
                 | NoSuchAlgorithmException
                 | KeyStoreException

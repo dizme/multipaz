@@ -8,7 +8,29 @@ import SwiftUI
 @Observable
 class ViewModel {
 
-    var path = NavigationPath()
+    var path: [Destination] = []
+
+    let verticalCardListState = VerticalCardListState()
+
+    func push(_ destination: Destination) {
+        if path.last != destination {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                path.append(destination)
+            }
+        }
+    }
+
+    func popWithoutAnimation() {
+        if !path.isEmpty {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                path.removeLast()
+            }
+        }
+    }
 
     var isLoading: Bool = true
 
@@ -308,7 +330,8 @@ class ViewModel {
             validUntil: validUntil.toKotlinInstant().truncateToWholeSeconds(),
             expectedUpdate: nil,
             domain: "mdoc_user_auth",
-            randomProvider: KotlinRandom.companion
+            randomProvider: KotlinRandom.companion,
+            includeElement: { _, _ in KotlinBoolean(value: true) }
         )
         try! await document.edit(editActionFn: { editor in
             editor.provisioned = true
@@ -332,11 +355,11 @@ class ViewModel {
                 }
                 return nil
             },
-            showConsentPromptFn: { requester, trustMetadata, credentialPresentmentData, preselectedDocuments, onDocumentsInFocus in
+            showConsentPromptFn: { requester, trustMetadata, consentData, preselectedDocuments, onDocumentsInFocus in
                 try! await promptModelRequestConsent(
                     requester: requester,
                     trustMetadata: trustMetadata,
-                    credentialPresentmentData: credentialPresentmentData,
+                    consentData: consentData,
                     preselectedDocuments: preselectedDocuments,
                     onDocumentsInFocus: { documents in onDocumentsInFocus(documents) }
                 )

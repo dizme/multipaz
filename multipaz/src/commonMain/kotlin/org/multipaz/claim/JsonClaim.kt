@@ -28,7 +28,7 @@ data class JsonClaim(
     override val attribute: DocumentAttribute?,
     val vct: String,
     val claimPath: JsonArray,
-    val value: JsonElement
+    val value: JsonElement,
 ) : Claim(displayName, attribute) {
 
     override fun render(timeZone: TimeZone): String {

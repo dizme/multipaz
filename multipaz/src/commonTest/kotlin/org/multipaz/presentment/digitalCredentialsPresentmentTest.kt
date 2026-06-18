@@ -138,7 +138,7 @@ class DigitalCredentialsPresentmentTest {
     }
 
     private data class ShownConsentPrompt(
-        val credentialPresentmentData: CredentialPresentmentData,
+        val credentialQueryResult: CredentialQueryResult,
         val preselectedDocuments: List<Document>,
         val requester: Requester,
         val trustPoint: TrustPoint?
@@ -199,7 +199,7 @@ class DigitalCredentialsPresentmentTest {
             requestSigningKey = readerAuthKey,
             responseMode = OpenID4VP.ResponseMode.DC_API,
             responseUri = null,
-            dclqQuery = dcql,
+            dcqlQuery = dcql,
             jsonTransactionData = transactionData
         )
 
@@ -354,9 +354,9 @@ class DigitalCredentialsPresentmentTest {
         }
 
         val deviceResponse = DeviceResponse.fromDataItem(Cbor.decode(encodedDeviceResponse))
-        deviceResponse.verify(
+        deviceResponse.verifySingleDoc(
             sessionTranscript = sessionTranscript,
-            transactionDataList = if (transactionData.isEmpty()) {
+            transactionData = if (transactionData.isEmpty()) {
                 emptyList()
             } else {
                 TransactionDataJson.parse(
@@ -364,7 +364,7 @@ class DigitalCredentialsPresentmentTest {
                         it.encodeToByteArray().toBase64Url()
                     },
                     documentTypeRepository = documentStoreTestHarness.documentTypeRepository
-                ).values.toList()
+                ).values.first()
             }
         )
         assertEquals(DeviceResponse.STATUS_OK, deviceResponse.status)

@@ -1,0 +1,55 @@
+name: Publish to Maven Central
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and Publish Snapshots to Maven Central
+    runs-on: macos-15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Select Xcode 26
+        run: |
+          XCODE_PATH=""
+          # Check for Xcode 26
+          XCODE_26=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | tail -n 1)
+          if [ -n "$XCODE_26" ]; then
+            XCODE_PATH="$XCODE_26/Contents/Developer"
+          fi
+          
+          if [ -d "$XCODE_PATH" ]; then
+            echo "Selecting Xcode: $XCODE_PATH"
+            sudo xcode-select -s "$XCODE_PATH"
+          else
+            echo "Xcode 26 not found, using default Xcode version"
+          fi
+          xcodebuild -version
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run host unit tests
+        run: ./gradlew test -Pdisable.web.targets=true
+
+      - name: Publish Snapshots
+        run: ./gradlew publishAllPublicationsToCentralSnapshotsRepository -Psnapshot=true
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

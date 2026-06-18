@@ -53,10 +53,10 @@ import org.multipaz.securearea.software.SoftwareSecureArea
 import org.multipaz.storage.Storage
 import org.multipaz.storage.ephemeral.EphemeralStorage
 import org.multipaz.util.Logger
-import org.multipaz.util.deflate
 import org.multipaz.util.fromHex
-import org.multipaz.util.inflate
 import org.multipaz.util.toBase64Url
+import org.multipaz.util.zlibDeflate
+import org.multipaz.util.zlibInflate
 import kotlin.experimental.xor
 import kotlin.random.Random
 import kotlin.test.BeforeTest
@@ -451,7 +451,7 @@ class DeviceResponseTest {
         dr[2916 + 16] = dr[2916 + 16].xor(0xff.toByte())
         val drParsed = DeviceResponse.fromDataItem(Cbor.decode(dr))
         assertEquals(
-            "Signature on MSO failed to verify",
+            "Signature verification failed",
             assertFailsWith(IllegalStateException::class) {
                 drParsed.verify(
                     sessionTranscript = sessionTranscript,
@@ -470,7 +470,7 @@ class DeviceResponseTest {
         dr[3612 + 16] = dr[3612 + 16].xor(0xff.toByte())
         val drParsed = DeviceResponse.fromDataItem(Cbor.decode(dr))
         assertEquals(
-            "Device authentication signature failed to verify",
+            "Signature verification failed",
             assertFailsWith(IllegalStateException::class) {
                 drParsed.verify(
                     sessionTranscript = sessionTranscript,
@@ -496,7 +496,7 @@ class DeviceResponseTest {
                     sessionTranscript = sessionTranscript,
                     atTime = mdlTimeValidityBegin
                 )
-            }.cause!!.message
+            }.message
         )
     }
 
@@ -517,7 +517,7 @@ class DeviceResponseTest {
                     sessionTranscript = sessionTranscript,
                     atTime = mdlTimeValidityBegin
                 )
-            }.cause!!.message
+            }.message
         )
     }
 
@@ -581,8 +581,8 @@ class DeviceResponseTest {
 
         // verify() should fail if eReaderKey isn't passed
         assertEquals(
-            "Error verifying document 0 in DeviceResponse",
-            assertFailsWith(IllegalStateException::class) {
+            "Device authentication is MAC but eReaderKey was not set",
+            assertFailsWith(IllegalArgumentException::class) {
                 drParsed.verify(
                     sessionTranscript = sessionTranscript,
                     atTime = mdlTimeValidityBegin
@@ -617,7 +617,7 @@ class DeviceResponseTest {
                     eReaderKey = AsymmetricKey.AnonymousExplicit(eReaderKey, Algorithm.ECDH_P256),
                     atTime = mdlTimeValidityBegin
                 )
-            }.cause!!.message
+            }.message
         )
     }
 
@@ -657,7 +657,7 @@ class DeviceResponseTest {
                     sessionTranscript = sessionTranscript,
                     atTime = mdlTimeValidityBegin - 10.seconds
                 )
-            }.cause!!.message
+            }.message
         )
         assertEquals(
             "MSO is not valid anymore",
@@ -666,7 +666,7 @@ class DeviceResponseTest {
                     sessionTranscript = sessionTranscript,
                     atTime = mdlTimeValidityEnd + 10.seconds
                 )
-            }.cause!!.message
+            }.message
         )
     }
 
@@ -750,13 +750,13 @@ class DeviceResponseTest {
             """
                 {
                   "org.iso.23220.1": [24(<< {
-                    "digestID": 34,
-                    "random": h'1373eb313c9cb6252f2343c1840d133d',
+                    "digestID": 35,
+                    "random": h'ff4f6a83adf75071a2666f94a5b7412b',
                     "elementIdentifier": "family_name",
                     "elementValue": "Mustermann"
                   } >>), 24(<< {
-                    "digestID": 32,
-                    "random": h'e15d2404105d7a163dbd5b2af37c3e3c',
+                    "digestID": 4,
+                    "random": h'f6c860d47511d198e9a1b4ee69d6d66e',
                     "elementIdentifier": "given_name",
                     "elementValue": "Erika"
                   } >>)]
@@ -1097,7 +1097,7 @@ class DeviceResponseTest {
                 addOtherDocument(
                     OtherDocument(
                         docFormat = "sd-jwt+kb",
-                        data = ByteString(compactSerialization.encodeToByteArray().deflate())
+                        data = ByteString(compactSerialization.encodeToByteArray().zlibDeflate())
                     )
                 )
             }
@@ -1136,7 +1136,7 @@ class DeviceResponseTest {
         assertEquals(1, encDocs.otherDocuments.size)
 
         assertEquals("sd-jwt+kb", encDocs.otherDocuments[0].docFormat)
-        val sdJwtKbCompactSerialization = encDocs.otherDocuments[0].data.toByteArray().inflate().decodeToString()
+        val sdJwtKbCompactSerialization = encDocs.otherDocuments[0].data.toByteArray().zlibInflate().decodeToString()
         val processedPayload = SdJwtKb.fromCompactSerialization(sdJwtKbCompactSerialization)
             .verify(
                 issuerKey = euPidDsKey.publicKey,
@@ -1188,7 +1188,7 @@ class DeviceResponseTest {
             addOtherDocument(
                 otherDocument = OtherDocument(
                     docFormat = "xyz123-abc",
-                    data = ByteString(byteArrayOf(1, 2, 3).deflate())
+                    data = ByteString(byteArrayOf(1, 2, 3).zlibDeflate())
                 )
             )
         }
@@ -1199,6 +1199,6 @@ class DeviceResponseTest {
 
         assertEquals(1, drParsed.otherDocuments.size)
         assertEquals("xyz123-abc", drParsed.otherDocuments[0].docFormat)
-        assertContentEquals(byteArrayOf(1, 2, 3), drParsed.otherDocuments[0].data.toByteArray().inflate())
+        assertContentEquals(byteArrayOf(1, 2, 3), drParsed.otherDocuments[0].data.toByteArray().zlibInflate())
     }
 }

@@ -30,7 +30,7 @@ data class MdocClaim(
     val docType: String,
     val namespaceName: String,
     val dataElementName: String,
-    val value: DataItem
+    val value: DataItem,
 ) : Claim(displayName, attribute) {
 
     override fun render(timeZone: TimeZone): String {

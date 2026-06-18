@@ -11,9 +11,8 @@ import org.multipaz.crypto.AsymmetricKey
 import org.multipaz.crypto.Crypto
 import org.multipaz.presentment.TransactionData
 import org.multipaz.sdjwt.SdJwtKb
-import org.multipaz.util.Logger
-import org.multipaz.util.inflate
 import org.multipaz.util.toBase64Url
+import org.multipaz.util.zlibInflate
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
@@ -30,6 +29,11 @@ data class OtherDocument(
     val docFormat: String,
     val data: ByteString
 ) {
+    /**
+     * List of verified transaction data which was sent in the request
+     */
+    lateinit var transactionData: List<TransactionData>
+
     internal fun toDataItem() = buildCborMap {
         put("docFormat", docFormat)
         put("data", data.toByteArray())
@@ -40,16 +44,15 @@ data class OtherDocument(
         eReaderKey: AsymmetricKey?,
         transactionData: List<TransactionData>,
         atTime: Instant,
-    ): Map<String, Map<String, DataItem>> {
+    ) {
         when (docFormat) {
-            "sd-jwt+kb" -> return verifySdJwtVc(
+            "sd-jwt+kb" -> verifySdJwtVc(
                 sessionTranscript = sessionTranscript,
                 eReaderKey = eReaderKey,
                 transactionData = transactionData,
                 atTime = atTime
             )
         }
-        return emptyMap()
     }
 
     internal suspend fun verifySdJwtVc(
@@ -57,8 +60,8 @@ data class OtherDocument(
         eReaderKey: AsymmetricKey?,
         transactionData: List<TransactionData>,
         atTime: Instant,
-    ): Map<String, Map<String, DataItem>> {
-        val sdJwtKb = SdJwtKb.fromCompactSerialization(data.toByteArray().inflate().decodeToString())
+    ) {
+        val sdJwtKb = SdJwtKb.fromCompactSerialization(data.toByteArray().zlibInflate().decodeToString())
 
         val issuerCertChain = sdJwtKb.sdJwt.x5c
             ?: throw IllegalStateException("Issuer-signed key not in `x5c` in header")
@@ -69,7 +72,7 @@ data class OtherDocument(
         )
         val expectedNonce = Crypto.digest(Algorithm.SHA256, Cbor.encode(sessionTranscriptBytes)).toBase64Url()
 
-        val processedPayload = sdJwtKb.verify(
+        sdJwtKb.verify(
             issuerKey = issuerCertChain.certificates.first().ecPublicKey,
             checkNonce = { nonce ->
                 expectedNonce == nonce
@@ -82,7 +85,7 @@ data class OtherDocument(
                 val drift = (atTime - creationTime).absoluteValue
                 drift < 5.minutes
             },
-            transactionData = emptyList()  // TODO: handle transaction data
+            transactionData = transactionData
         )
         // Check validity
         val validFrom = sdJwtKb.sdJwt.validFrom ?: throw IllegalStateException("No nbf claim")
@@ -93,8 +96,7 @@ data class OtherDocument(
         if (atTime > validUntil) {
             throw IllegalStateException("SD-JWT is not valid anymore")
         }
-        // TODO: Check transaction data and return transaction processing responses
-        return emptyMap()
+        this.transactionData = transactionData
     }
 
     companion object {
