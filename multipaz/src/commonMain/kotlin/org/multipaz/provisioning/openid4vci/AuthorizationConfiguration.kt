@@ -53,8 +53,13 @@ internal data class AuthorizationConfiguration(
                     throw IllegalStateException("response type 'code' is not supported")
                 }
             }
-            val codeChallengeMethods = metadata.array("code_challenge_methods_supported")
-            if (responseType != null) {
+            // Fork (wallet2): RFC 8414 makes code_challenge_methods_supported OPTIONAL
+            // (omitted = the AS does not support PKCE). Pre-authorized-code-only issuers
+            // legitimately omit it, since PKCE only protects the authorization code flow —
+            // rejecting them at parse time breaks flows that never use PKCE. Enforce S256
+            // only when the AS actually declares the field.
+            val codeChallengeMethods = metadata.arrayOrNull("code_challenge_methods_supported")
+            if (codeChallengeMethods != null) {
                 var challengeSupported = false
                 for (method in codeChallengeMethods) {
                     if (method is JsonPrimitive && method.content == "S256") {
