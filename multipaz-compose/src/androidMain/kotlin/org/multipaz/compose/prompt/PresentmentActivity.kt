@@ -244,19 +244,6 @@ class PresentmentActivity: FragmentActivity() {
         }
     }
 
-    override fun onPause() {
-        super.onPause()
-        val state = presentmentModel.state.value
-        if (state is PresentmentModel.State.Reset && presentmentModel.showDocumentChooser != null) {
-            NfcAdapter.getDefaultAdapter(this)?.let {
-                val cardEmulation = CardEmulation.getInstance(it)
-                if (!cardEmulation.unsetPreferredService(this)) {
-                    Logger.w(TAG, "CardEmulation.unsetPreferredService() return false")
-                }
-            }
-        }
-    }
-
     override fun onStop() {
         super.onStop()
         Logger.i(TAG, "in onStop(), canceling")

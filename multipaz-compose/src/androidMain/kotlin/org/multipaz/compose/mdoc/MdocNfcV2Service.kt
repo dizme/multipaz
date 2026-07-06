@@ -245,22 +245,10 @@ abstract class MdocNfcV2Service(
         engagement = MdocNfcV2EngagementHelper(
             eDeviceKey = eDeviceKey.publicKey,
             onHandoverComplete = { connectionMethod, encodedDeviceEngagement, handover ->
-                // OK, we're done with engagement and we're communicating with a bona fide ISO/IEC 18013-5 Second
-                // Edition reader capable of NFCv2. Start the activity and also launch a new job for handling the
-                // transaction...
+                // OK, we're done with engagement, and we're communicating with a bona fide ISO/IEC 18013-5 Second
+                // Edition reader capable of NFCv2. Let the user know and launch a new job to start the transaction.
                 //
                 vibrateSuccess()
-
-                if (settings.activityClass != null) {
-                    val intent = Intent(applicationContext, settings.activityClass)
-                    intent.addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_NO_HISTORY or
-                                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
-                                Intent.FLAG_ACTIVITY_NO_ANIMATION
-                    )
-                    applicationContext.startActivity(intent)
-                }
 
                 hybridTransport = NfcHybridTransportMdoc(
                     sendMessageViaNfc = { message ->
@@ -275,6 +263,19 @@ abstract class MdocNfcV2Service(
                 // NFC deactivation (the reader moving away) and the Service's onDestroy
                 // (as the transaction may continue over BLE and wait for UI consent).
                 transactionJob = CoroutineScope(Dispatchers.IO + settings.promptModel).launch {
+                    // Start PresentmentActivity...
+                    if (settings.activityClass != null) {
+                        val intent = Intent(applicationContext, settings.activityClass)
+                        intent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                    Intent.FLAG_ACTIVITY_NO_HISTORY or
+                                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+                                    Intent.FLAG_ACTIVITY_NO_ANIMATION
+                        )
+                        applicationContext.startActivity(intent)
+                    }
+
+                    // Connect to the transport and start the transaction...
                     hybridTransport!!.open(eDeviceKey.publicKey)
                     val duration = Clock.System.now() - timeStarted
                     startTransaction(
@@ -293,7 +294,7 @@ abstract class MdocNfcV2Service(
             },
             onError = { error ->
                 // Engagement failed. This can happen if a NDEF tag reader - for example another unlocked
-                // Android device - is reading this device. So we really don't want any user-visible side-effects
+                // Android device - is reading this device. So we really don't want any user-visible side effects
                 // here such as showing an error or vibrating the phone.
                 //
                 engagementComplete = true
@@ -335,7 +336,7 @@ abstract class MdocNfcV2Service(
             transport.setExpectTransport(true)
             // Wait for the non-NFC transport in a coroutine so we are not blocking
             // initiating presentment....
-            waitForTransportJob = serviceScope.launch(Dispatchers.IO) {
+            waitForTransportJob = CoroutineScope(transactionJobContext).launch(Dispatchers.IO) {
                 try {
                     val negotiatedTransport = MdocTransportFactory.Default.createTransport(
                         connectionMethod = connectionMethod,
